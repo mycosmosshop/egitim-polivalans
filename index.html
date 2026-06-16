@@ -130,6 +130,10 @@
       <div class="chart-card"><h3>📋 Etkinlik Kriterleri <span class="muted" id="degerInfo2" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chEtkinlik"></canvas></div></div>
       <div class="chart-card"><h3>📊 Etkinlik Sonucu <span class="muted" id="tekrarInfo" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chPuan"></canvas></div></div>
     </div>
+    <div class="chart-card" style="margin-bottom:16px;">
+      <h3>👤 Kişi Başı Yıllık Eğitim Saati <span class="muted" style="font-weight:400;">(gerçekleşen / o yıl eğitim alan kişi)</span></h3>
+      <div class="chart-box"><canvas id="chKisiYil"></canvas></div>
+    </div>
     <div class="chart-card">
       <h3>🚫 Eğitim Almayanlar <span class="muted" style="font-weight:400;">(polivalans personeli, seçili filtre)</span></h3>
       <div style="max-height:320px;overflow:auto;"><table id="almayanTbl"><tbody id="almayanBody"></tbody></table></div>
@@ -161,9 +165,23 @@
       <div class="chart-card"><h3>🏢 Departman Bazlı Ortalama Yetkinlik</h3><div class="chart-box"><canvas id="pdChDept"></canvas></div></div>
       <div class="chart-card"><h3>📍 Lokasyon Bazlı Ortalama Yetkinlik</h3><div class="chart-box"><canvas id="pdChLok"></canvas></div></div>
     </div>
-    <div class="grid2">
+    <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🏆 En Çok Uzman (Sv4) Olunan Makineler</h3><div class="chart-box"><canvas id="pdChUzman"></canvas></div></div>
       <div class="chart-card"><h3>⚠️ Eğitim Gereken Makineler <span class="muted" style="font-weight:400;">(en çok gap)</span></h3><div class="chart-box"><canvas id="pdChGap"></canvas></div></div>
+    </div>
+    <div class="chart-card">
+      <h3>🔧 Makine/Proses Yetkinlik Kapsama <span class="muted" style="font-weight:400;">(yedekleme — yetkin = seviye 3-4 / bağımsız çalışabilen)</span></h3>
+      <div class="filters" style="margin-bottom:10px;">
+        <select id="pdYedekF" onchange="renderPolDash()">
+          <option value="">Tüm Makineler</option>
+          <option value="kritik">🔴 Kritik (0-1 yetkin)</option>
+          <option value="iyi">🟢 Yedekli (2+ yetkin)</option>
+        </select>
+        <span class="muted" id="pdYedekInfo"></span>
+      </div>
+      <div class="table-wrap" style="max-height:460px;"><table>
+        <thead><tr><th>Makine/Proses</th><th>Grup</th><th>Toplam Kişi</th><th>Yetkin (Sv3-4)</th><th>Uzman (Sv4)</th><th>Yedekleme</th></tr></thead>
+        <tbody id="pdYedekBody"></tbody></table></div>
     </div>
   </div>
 
@@ -613,6 +631,26 @@ function renderPolDash(){
   const gapMap={}; p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h&&(+r.yetenek||0)<h){const M=r.makine_adi||'(Belirsiz)';gapMap[M]=(gapMap[M]||0)+1;}});
   const gapE=Object.entries(gapMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
   drawBar('pdChGap','Gap Sayısı',gapE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),gapE.map(x=>x[1]),'#e11d48',true);
+  // makine yetkinlik kapsama / yedekleme: her makine için yetkin (sv3-4) kişi sayısı
+  const mkMap=new Map();
+  p.forEach(r=>{
+    const k=r.makine_kodu||r.makine_adi; if(!mkMap.has(k)) mkMap.set(k,{adi:r.makine_adi,grup:r.makinegrup_adi,toplam:0,yetkin:0,uzman:0});
+    const m=mkMap.get(k); m.toplam++; const y=+r.yetenek||0; if(y>=3)m.yetkin++; if(y===4)m.uzman++;
+  });
+  const yf=document.getElementById('pdYedekF').value;
+  let mkArr=[...mkMap.values()];
+  if(yf==='kritik') mkArr=mkArr.filter(m=>m.yetkin<=1);
+  else if(yf==='iyi') mkArr=mkArr.filter(m=>m.yetkin>=2);
+  mkArr.sort((a,b)=>a.yetkin-b.yetkin||String(a.adi).localeCompare(String(b.adi),'tr'));
+  const kritikSay=[...mkMap.values()].filter(m=>m.yetkin<=1).length;
+  document.getElementById('pdYedekInfo').textContent=`${mkMap.size} makine/proses · ${kritikSay} tanesi kritik (≤1 yetkin kişi)`;
+  document.getElementById('pdYedekBody').innerHTML=mkArr.slice(0,500).map(m=>{
+    const dur = m.yetkin===0 ? '<span class="badge b-no">🔴 Yetkin yok</span>'
+      : m.yetkin===1 ? '<span class="badge" style="background:#fef3c7;color:#92400e;">🟡 Tek kişiye bağımlı</span>'
+      : '<span class="badge b-ok">🟢 Yedekli</span>';
+    return `<tr><td>${esc(m.adi)}</td><td class="muted">${esc(m.grup||'')}</td><td>${m.toplam}</td>
+      <td><b>${m.yetkin}</b></td><td>${m.uzman}</td><td>${dur}</td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="muted">Kayıt yok</td></tr>';
 }
 
 // ===================== MANUEL GİRİŞ (admin) =====================
@@ -925,6 +963,15 @@ function renderDash(){
   drawDoughnut('chPuan',['Etkili','Kısmen Etkili','Etkili Değil'],
     [sonucC['Etkili'],sonucC['Kısmen Etkili'],sonucC['Etkili Değil']],['#16a34a','#f59e0b','#e11d48']);
   document.getElementById('tekrarInfo').textContent=tekrar?`· ⚠ ${tekrar} tekrar eğitim planlı`:'';
+
+  // --- Kişi başı yıllık eğitim saati (lokasyon filtreli, yıl filtresi YOK) ---
+  const kyMap={};
+  EGT.filter(r=>(!lok||r.lokasyon===lok)&&r.gerceklesme).forEach(r=>{
+    if(!r.yil)return; (kyMap[r.yil]=kyMap[r.yil]||{s:0,k:new Set()});
+    kyMap[r.yil].s+=num(r.sure); kyMap[r.yil].k.add(r.personel_guid||r.personel);
+  });
+  const kyE=Object.entries(kyMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  drawBar('chKisiYil','Saat/Kişi',kyE.map(x=>x[0]),kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),'#0891b2');
 
   // --- Almayanlar listesi ---
   almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
