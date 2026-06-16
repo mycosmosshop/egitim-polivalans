@@ -167,6 +167,7 @@
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
+        <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMPol()">✏️ Manuel Yetkinlik</button>
         <div class="legend">
           <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1</span>
           <span><i class="yet yet2" style="width:16px;height:16px;line-height:16px;"></i>2</span>
@@ -231,6 +232,7 @@
           <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
+        <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMEgt()">✏️ Manuel Eğitim</button>
       </div>
       <div class="table-wrap">
         <table id="egtTable">
@@ -357,6 +359,61 @@
   </div>
 </div>
 
+<!-- Manuel Yetkinlik Modalı -->
+<div class="modal-bg" id="mPolModal">
+  <div class="modal">
+    <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>✏️ Manuel Yetkinlik Ekle</h3><button class="modal-x" onclick="closeMPol()">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
+      <div class="fgroup"><label>Personel *</label><input list="mPersList" id="mPolPersonel" placeholder="Ad Soyad"></div>
+      <datalist id="mPersList"></datalist>
+      <div class="frow" style="grid-template-columns:2fr 1fr;">
+        <div class="fgroup"><label>Makine / Konu *</label><input id="mPolMakine" placeholder="Makine veya konu adı"></div>
+        <div class="fgroup"><label>Kod</label><input id="mPolKod" placeholder="ops."></div>
+      </div>
+      <div class="frow">
+        <div class="fgroup"><label>Yetkinlik *</label><select id="mPolYet"><option value="1">1 - Başlangıç</option><option value="2">2 - Gelişmekte</option><option value="3">3 - Yetkin</option><option value="4" selected>4 - Uzman</option></select></div>
+        <div class="fgroup"><label>Departman</label><input list="mDeptList" id="mPolDept"></div>
+        <div class="fgroup"><label>Lokasyon</label><input list="mLokList" id="mPolLok"></div>
+      </div>
+      <datalist id="mDeptList"></datalist><datalist id="mLokList"></datalist>
+      <div class="fgroup"><label>Proses Grubu</label><input id="mPolGrup" placeholder="ops."></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeMPol()">İptal</button>
+      <button class="btn" style="background:#7c3aed;color:#fff;" onclick="kaydetMPol()">💾 Ekle</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manuel Eğitim Modalı -->
+<div class="modal-bg" id="mEgtModal">
+  <div class="modal">
+    <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>✏️ Manuel Eğitim Ekle</h3><button class="modal-x" onclick="closeMEgt()">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
+      <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" placeholder="Eğitim konusu"></div>
+      <div class="frow" style="grid-template-columns:2fr 1fr;">
+        <div class="fgroup"><label>Personel *</label><input list="mPersList" id="mEgtPersonel" placeholder="Ad Soyad"></div>
+        <div class="fgroup"><label>Tarih *</label><input type="date" id="mEgtTarih"></div>
+      </div>
+      <div class="frow">
+        <div class="fgroup"><label>Tür</label><select id="mEgtTur"><option>İç Eğitim</option><option>Dış Eğitim</option><option>İşbaşı Eğitim</option><option>Online Eğitim</option></select></div>
+        <div class="fgroup"><label>Süre (saat)</label><input type="number" id="mEgtSure" step="0.5" min="0"></div>
+        <div class="fgroup"><label>Durum</label><select id="mEgtDurum"><option value="1">Gerçekleşti</option><option value="0">Planlandı</option></select></div>
+      </div>
+      <div class="frow" style="grid-template-columns:1fr 1fr;">
+        <div class="fgroup"><label>Eğitici</label><input id="mEgtEgitici"></div>
+        <div class="fgroup"><label>Lokasyon</label><input list="mLokList" id="mEgtLok"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeMEgt()">İptal</button>
+      <button class="btn" style="background:#7c3aed;color:#fff;" onclick="kaydetMEgt()">💾 Ekle</button>
+    </div>
+  </div>
+</div>
+
 <!-- Eğitim Planla Modalı (gap kapatma) -->
 <div class="modal-bg" id="planModal">
   <div class="modal">
@@ -473,6 +530,80 @@ function buildFilters(){
   document.getElementById('egtYil').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
   document.getElementById('dashYil').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
   document.getElementById('dashLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(allLoks);
+  // Manuel giriş datalist'leri
+  const pers=[...new Set(POL.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('mPersList').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
+  document.getElementById('mDeptList').innerHTML=opts(depts);
+  document.getElementById('mLokList').innerHTML=opts(allLoks);
+}
+
+// ===================== MANUEL GİRİŞ (admin) =====================
+function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi,'_').replace(/^_|_$/g,'');}
+function openMPol(){
+  document.getElementById('mPolPersonel').value='';document.getElementById('mPolMakine').value='';
+  document.getElementById('mPolKod').value='';document.getElementById('mPolYet').value='4';
+  document.getElementById('mPolDept').value='';document.getElementById('mPolLok').value='';document.getElementById('mPolGrup').value='';
+  document.getElementById('mPolModal').classList.add('show');
+}
+function closeMPol(){document.getElementById('mPolModal').classList.remove('show');}
+async function kaydetMPol(){
+  const personel=document.getElementById('mPolPersonel').value.trim();
+  const makine=document.getElementById('mPolMakine').value.trim();
+  if(!personel||!makine){toast('⚠ Personel ve makine/konu gerekli','#d97706',2500);return;}
+  const guid='man_'+slug(personel);
+  const kod=document.getElementById('mPolKod').value.trim()||('MAN_'+slug(makine));
+  const rec={pol_inckey:-Date.now(),personel_guid:guid,personel:personel,makine_kodu:kod,makine_adi:makine,
+    makinegrup_adi:document.getElementById('mPolGrup').value.trim()||'(Manuel)',makinegrup_kodu:null,
+    yetenek:+document.getElementById('mPolYet').value,guncel:1,tarih:bugun(),
+    departman:document.getElementById('mPolDept').value.trim()||null,lokasyon:document.getElementById('mPolLok').value.trim()||null,
+    proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
+  POL.push(rec); POL_BY_KEY.set(guid+'|'+kod,rec); closeMPol(); buildFilters(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('✏️ Manuel yetkinlik eklendi','#16a34a',1800);
+  }catch(e){toast('❌ Eklenemedi (kaynak kolonu eklendi mi?): '+e.message,'#dc2626',5000);}
+}
+function openMEgt(){
+  ['mEgtKonu','mEgtPersonel','mEgtSure','mEgtEgitici','mEgtLok'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('mEgtTarih').value=bugun();document.getElementById('mEgtTur').value='İç Eğitim';document.getElementById('mEgtDurum').value='1';
+  document.getElementById('mEgtModal').classList.add('show');
+}
+function closeMEgt(){document.getElementById('mEgtModal').classList.remove('show');}
+async function kaydetMEgt(){
+  const konu=document.getElementById('mEgtKonu').value.trim();
+  const personel=document.getElementById('mEgtPersonel').value.trim();
+  const tarih=document.getElementById('mEgtTarih').value;
+  if(!konu||!personel||!tarih){toast('⚠ Konu, personel ve tarih gerekli','#d97706',2500);return;}
+  const ger=document.getElementById('mEgtDurum').value==='1';
+  const rec={uid:'man_'+Date.now(),plan_inckey:null,yil:tarih.slice(0,4),konu:konu,
+    turu:document.getElementById('mEgtTur').value,lokasyon:document.getElementById('mEgtLok').value.trim()||null,
+    plan_tarih:tarih,kayit_tarih:ger?tarih:null,sure:document.getElementById('mEgtSure').value?+document.getElementById('mEgtSure').value:null,
+    gerceklesme:ger?1:0,personel:personel,personel_guid:'man_'+slug(personel),egitici:document.getElementById('mEgtEgitici').value.trim()||null,
+    kaynak:'manuel'};
+  EGT.push(rec); EGT_BY_UID.set(rec.uid,rec); closeMEgt(); buildFilters(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('✏️ Manuel eğitim eklendi','#16a34a',1800);
+  }catch(e){toast('❌ Eklenemedi (kaynak kolonu eklendi mi?): '+e.message,'#dc2626',5000);}
+}
+async function silManuelPol(guid,mk){
+  if(!confirm('Bu manuel yetkinlik kaydı silinsin mi?'))return;
+  const key=guid+'|'+mk; const rec=POL_BY_KEY.get(key);
+  POL=POL.filter(r=>!((r.personel_guid||'')===guid&&(r.makine_kodu||'')===mk)); POL_BY_KEY.delete(key); renderPol();
+  if(rec&&rec.pol_inckey!=null){
+    try{await fetch(`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${rec.pol_inckey}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Silindi','#64748b',1500);}
+    catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+  }
+}
+async function silManuelEgt(uid){
+  if(!confirm('Bu manuel eğitim kaydı silinsin mi?'))return;
+  EGT=EGT.filter(r=>r.uid!==uid); EGT_BY_UID.delete(uid); renderEgt(); renderDash();
+  try{await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Silindi','#64748b',1500);}
+  catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
 }
 
 function showTab(t){
@@ -811,9 +942,10 @@ function renderPol(){
       : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
     const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
     const chk=_polSel.has(key)?'checked':'';
-    return `<tr>
+    const manRoz=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
+    return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
       <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
-      <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
+      <td><b>${esc(r.personel)}</b>${manRoz}</td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
       <td class="muted">${esc(r.makinegrup_adi)}</td>${mkCell}<td class="muted">${esc(r.makine_kodu)}</td>
       <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
       <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
@@ -1167,8 +1299,9 @@ function renderEgt(){
         dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;
       }
     }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
-    return `<tr>
-    <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+    const manRozE=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelEgt('${esc(r.uid)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
+    return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
+    <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b>${manRozE}</td><td class="muted">${esc(r.turu)}</td>
     <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
@@ -1209,6 +1342,8 @@ function exportXlsx(which){
 document.getElementById('degerModal').addEventListener('click',e=>{if(e.target.id==='degerModal')closeDeger();});
 document.getElementById('polModal').addEventListener('click',e=>{if(e.target.id==='polModal')closePolDeger();});
 document.getElementById('planModal').addEventListener('click',e=>{if(e.target.id==='planModal')closePlan();});
+document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id==='mPolModal')closeMPol();});
+document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
 loadAll(true);
 </script>
 </body>
