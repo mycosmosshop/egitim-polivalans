@@ -85,11 +85,12 @@
 
 <div class="container">
   <div class="tabs">
-    <button class="tab active" id="tab-dash" onclick="showTab('dash')">📊 Gösterge Paneli</button>
+    <button class="tab active" id="tab-dash" onclick="showTab('dash')">📊 Eğitim Paneli</button>
+    <button class="tab" id="tab-poldash" onclick="showTab('poldash')">📈 Polivalans Paneli</button>
     <button class="tab" id="tab-pol" onclick="showTab('pol')">🧩 Polivalans</button>
     <button class="tab" id="tab-egt" onclick="showTab('egt')">📚 Eğitim Planı</button>
-    <button class="tab" id="tab-personel" onclick="showTab('personel')">👤 Personel Kartı</button>
-    <button class="tab" id="tab-konu" onclick="showTab('konu')">📖 Konu / Makine</button>
+    <button class="tab" id="tab-personel" onclick="showTab('personel')">👤 Personel</button>
+    <button class="tab" id="tab-konu" onclick="showTab('konu')">📖 Konu/Makine</button>
   </div>
 
   <!-- DASHBOARD -->
@@ -129,13 +130,40 @@
       <div class="chart-card"><h3>📋 Etkinlik Kriterleri <span class="muted" id="degerInfo2" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chEtkinlik"></canvas></div></div>
       <div class="chart-card"><h3>📊 Etkinlik Sonucu <span class="muted" id="tekrarInfo" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chPuan"></canvas></div></div>
     </div>
-    <div class="grid3">
-      <div class="chart-card"><h3>🧩 Polivalans Yetkinlik Dağılımı <span class="muted" style="font-weight:400;">(seçili lokasyon)</span></h3><div class="chart-box"><canvas id="chYet"></canvas></div></div>
-      <div class="chart-card">
-        <h3>🚫 Eğitim Almayanlar <span class="muted" style="font-weight:400;">(polivalans personeli, seçili filtre)</span></h3>
-        <div style="max-height:300px;overflow:auto;"><table id="almayanTbl"><tbody id="almayanBody"></tbody></table></div>
-        <button class="btn" style="background:#1e7e4a;color:#fff;margin-top:10px;" onclick="exportXlsx('almayan')">📊 Listeyi İndir</button>
-      </div>
+    <div class="chart-card">
+      <h3>🚫 Eğitim Almayanlar <span class="muted" style="font-weight:400;">(polivalans personeli, seçili filtre)</span></h3>
+      <div style="max-height:320px;overflow:auto;"><table id="almayanTbl"><tbody id="almayanBody"></tbody></table></div>
+      <button class="btn" style="background:#1e7e4a;color:#fff;margin-top:10px;" onclick="exportXlsx('almayan')">📊 Listeyi İndir</button>
+    </div>
+  </div>
+
+  <!-- POLİVALANS PANELİ -->
+  <div id="view-poldash" class="hidden">
+    <div class="filters card" style="margin-bottom:16px;">
+      <b style="color:#334155;">Filtre:</b>
+      <select id="pdLok" onchange="renderPolDash()"><option value="">Tüm Lokasyonlar</option></select>
+      <select id="pdDept" onchange="renderPolDash()"><option value="">Tüm Departmanlar</option></select>
+      <span class="muted" id="pdInfo"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v" id="pdYetk">—</div><div class="l">Yetkinlik Kaydı</div></div>
+      <div class="stat"><div class="v" id="pdPers">—</div><div class="l">Personel</div></div>
+      <div class="stat"><div class="v" id="pdMak">—</div><div class="l">Makine/Proses</div></div>
+      <div class="stat amber"><div class="v" id="pdOrt">—</div><div class="l">Ort. Yetkinlik</div></div>
+      <div class="stat blue"><div class="v" id="pdHedef">—</div><div class="l">Hedef Tanımlı</div></div>
+      <div class="stat alt"><div class="v" id="pdGap">—</div><div class="l">Eğitim Gereken</div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>🧩 Yetkinlik Seviye Dağılımı</h3><div class="chart-box tall"><canvas id="pdChSev"></canvas></div></div>
+      <div class="chart-card"><h3>🎯 Hedef Durumu</h3><div class="chart-box tall"><canvas id="pdChHedef"></canvas></div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>🏢 Departman Bazlı Ortalama Yetkinlik</h3><div class="chart-box"><canvas id="pdChDept"></canvas></div></div>
+      <div class="chart-card"><h3>📍 Lokasyon Bazlı Ortalama Yetkinlik</h3><div class="chart-box"><canvas id="pdChLok"></canvas></div></div>
+    </div>
+    <div class="grid2">
+      <div class="chart-card"><h3>🏆 En Çok Uzman (Sv4) Olunan Makineler</h3><div class="chart-box"><canvas id="pdChUzman"></canvas></div></div>
+      <div class="chart-card"><h3>⚠️ Eğitim Gereken Makineler <span class="muted" style="font-weight:400;">(en çok gap)</span></h3><div class="chart-box"><canvas id="pdChGap"></canvas></div></div>
     </div>
   </div>
 
@@ -535,6 +563,48 @@ function buildFilters(){
   document.getElementById('mPersList').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
   document.getElementById('mDeptList').innerHTML=opts(depts);
   document.getElementById('mLokList').innerHTML=opts(allLoks);
+  document.getElementById('pdLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
+  document.getElementById('pdDept').innerHTML='<option value="">Tüm Departmanlar</option>'+opts(depts);
+}
+
+// ===================== POLİVALANS PANELİ =====================
+function renderPolDash(){
+  const lok=document.getElementById('pdLok').value;
+  const dept=document.getElementById('pdDept').value;
+  const p=POL.filter(r=>(!lok||r.lokasyon===lok)&&(!dept||r.departman===dept));
+  const yetler=p.map(r=>+r.yetenek||0).filter(v=>v>0);
+  const ort=yetler.length?(yetler.reduce((s,v)=>s+v,0)/yetler.length):0;
+  let hedefli=0,gapli=0;
+  p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  document.getElementById('pdYetk').textContent=p.length.toLocaleString('tr');
+  document.getElementById('pdPers').textContent=new Set(p.map(r=>r.personel)).size;
+  document.getElementById('pdMak').textContent=new Set(p.map(r=>r.makine_kodu)).size;
+  document.getElementById('pdOrt').textContent=ort?ort.toFixed(2):'—';
+  document.getElementById('pdHedef').textContent=hedefli;
+  document.getElementById('pdGap').textContent=gapli;
+  document.getElementById('pdInfo').textContent=`${p.length} yetkinlik kaydı`;
+  // seviye dağılımı
+  const yetC=[0,0,0,0]; p.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
+  drawDoughnut('pdChSev',['1 - Başlangıç','2 - Gelişmekte','3 - Yetkin','4 - Uzman'],yetC,['#ef4444','#f59e0b','#3b82f6','#16a34a']);
+  // hedef durumu
+  const ok=hedefli-gapli, hedefsiz=p.length-hedefli;
+  drawDoughnut('pdChHedef',['✓ Karşılanan','⚠ Eğitim Gereken','Hedefsiz'],[ok,gapli,hedefsiz],['#16a34a','#e11d48','#cbd5e1']);
+  // departman bazlı ortalama yetkinlik
+  const deptMap={}; p.forEach(r=>{const D=r.departman||'(Belirsiz)';(deptMap[D]=deptMap[D]||[]).push(+r.yetenek||0);});
+  const deptE=Object.entries(deptMap).map(([k,v])=>[k,v.reduce((s,x)=>s+x,0)/v.length]).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  drawBar('pdChDept','Ort. Yetkinlik',deptE.map(x=>x[0]),deptE.map(x=>+x[1].toFixed(2)),'#0891b2',true);
+  // lokasyon bazlı ortalama yetkinlik
+  const lokMap={}; p.forEach(r=>{const L=r.lokasyon||'(Belirsiz)';(lokMap[L]=lokMap[L]||[]).push(+r.yetenek||0);});
+  const lokE=Object.entries(lokMap).map(([k,v])=>[k,v.reduce((s,x)=>s+x,0)/v.length]).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  drawBar('pdChLok','Ort. Yetkinlik',lokE.map(x=>x[0]),lokE.map(x=>+x[1].toFixed(2)),'#2563eb',true);
+  // en çok uzman (sv4) olunan makineler
+  const uzMap={}; p.filter(r=>+r.yetenek===4).forEach(r=>{const M=r.makine_adi||'(Belirsiz)';uzMap[M]=(uzMap[M]||0)+1;});
+  const uzE=Object.entries(uzMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  drawBar('pdChUzman','Uzman Personel',uzE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),uzE.map(x=>x[1]),'#16a34a',true);
+  // eğitim gereken makineler (en çok gap)
+  const gapMap={}; p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h&&(+r.yetenek||0)<h){const M=r.makine_adi||'(Belirsiz)';gapMap[M]=(gapMap[M]||0)+1;}});
+  const gapE=Object.entries(gapMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  drawBar('pdChGap','Gap Sayısı',gapE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),gapE.map(x=>x[1]),'#e11d48',true);
 }
 
 // ===================== MANUEL GİRİŞ (admin) =====================
@@ -607,10 +677,11 @@ async function silManuelEgt(uid){
 }
 
 function showTab(t){
-  ['dash','pol','egt','personel','konu'].forEach(x=>{
+  ['dash','poldash','pol','egt','personel','konu'].forEach(x=>{
     document.getElementById('view-'+x).classList.toggle('hidden',x!==t);
     document.getElementById('tab-'+x).classList.toggle('active',x===t);
   });
+  if(t==='poldash')renderPolDash();
   if(t==='personel')buildPersDatalist();
   if(t==='konu')konuModChange();
 }
@@ -840,10 +911,6 @@ function renderDash(){
   drawDoughnut('chPuan',['Etkili','Kısmen Etkili','Etkili Değil'],
     [sonucC['Etkili'],sonucC['Kısmen Etkili'],sonucC['Etkili Değil']],['#16a34a','#f59e0b','#e11d48']);
   document.getElementById('tekrarInfo').textContent=tekrar?`· ⚠ ${tekrar} tekrar eğitim planlı`:'';
-
-  // --- Polivalans yetkinlik dağılımı (lokasyon filtreli) ---
-  const yetC=[0,0,0,0]; polP.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
-  drawDoughnut('chYet',['1 - Başlangıç','2 - Gelişmekte','3 - Yetkin','4 - Uzman'],yetC,['#ef4444','#f59e0b','#3b82f6','#16a34a']);
 
   // --- Almayanlar listesi ---
   almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
