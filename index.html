@@ -65,6 +65,12 @@
   .frow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
   .modal-foot{padding:14px 22px;border-top:1px solid #eef2f5;display:flex;gap:10px;justify-content:flex-end;}
   .sec-title{font-size:.8em;font-weight:700;color:#1e7e4a;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 10px;border-bottom:2px solid #dcfce7;padding-bottom:4px;}
+  .dropdown{position:relative;display:inline-block;}
+  .dropdown-menu{position:absolute;top:calc(100% + 4px);right:0;background:#fff;border:1px solid #e2e8f0;border-radius:9px;box-shadow:0 6px 22px rgba(0,0,0,.16);z-index:60;min-width:220px;padding:6px;display:none;}
+  .dropdown-menu.show{display:block;}
+  .dropdown-menu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;padding:9px 12px;cursor:pointer;border-radius:7px;font-size:.88em;color:#334155;font-weight:500;}
+  .dropdown-menu button:hover{background:#f1f5f9;}
+  .dropdown-menu hr{border:none;border-top:1px solid #eef2f5;margin:4px 0;}
   .btn-dgr{background:#1e7e4a;color:#fff;padding:5px 11px;border:none;border-radius:6px;cursor:pointer;font-size:.82em;font-weight:600;}
   .btn-dgr.done{background:#dcfce7;color:#166534;}
   .chk-sev{border:1px solid #e2e8f0;border-radius:9px;margin-bottom:10px;overflow:hidden;}
@@ -216,9 +222,15 @@
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
-        <button class="btn" style="background:#0891b2;color:#fff;" onclick="topluOtoPolDeger()" title="Görünen, değerlendirilmemiş yetkinlikleri mevcut seviyeye göre bugün tarihli değerlendir">🎯 Otomatik Değerlendir</button>
-        <button class="btn" style="background:#1e40af;color:#fff;" onclick="topluHedefEgitimAc()" title="Hedefi yükseltilecek (mevcut<hedef) yetkinliklere eğitim planla — seçim varsa seçilenlere, yoksa tümüne">🎓 Hedef Eğitimlerini Planla</button>
-        <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMPol()">✏️ Manuel Yetkinlik</button>
+        <div class="dropdown">
+          <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('polMenu')">⚙️ İşlemler ▾</button>
+          <div class="dropdown-menu" id="polMenu">
+            <button onclick="topluOtoPolDeger()">🎯 Otomatik Değerlendir</button>
+            <button onclick="topluHedefEgitimAc()">🎓 Hedef Eğitimlerini Planla</button>
+            <hr>
+            <button onclick="openMPol()">✏️ Manuel Yetkinlik Ekle</button>
+          </div>
+        </div>
         <div class="legend">
           <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1·Başlangıç</span>
           <span><i class="yet yet2" style="width:16px;height:16px;line-height:16px;"></i>2·Gelişmekte</span>
@@ -290,8 +302,14 @@
           <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
-        <button class="btn" style="background:#0891b2;color:#fff;" onclick="topluOtoDeger()" title="Görünen, gerçekleşmiş ve değerlendirilmemiş eğitimleri olumlu/bugün tarihli değerlendir">🎯 Otomatik Değerlendir</button>
-        <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMEgt()">✏️ Manuel Eğitim</button>
+        <div class="dropdown">
+          <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('egtMenu')">⚙️ İşlemler ▾</button>
+          <div class="dropdown-menu" id="egtMenu">
+            <button onclick="topluOtoDeger()">🎯 Otomatik Değerlendir</button>
+            <hr>
+            <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
+          </div>
+        </div>
       </div>
       <div class="table-wrap">
         <table id="egtTable">
@@ -1709,6 +1727,12 @@ document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id
 document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
 document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
 document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
+function closeAllMenus(){document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('show'));}
+function toggleMenu(id){const m=document.getElementById(id);const open=m.classList.contains('show');closeAllMenus();if(!open)m.classList.add('show');}
+document.addEventListener('click',e=>{
+  if(e.target.closest('.dropdown-menu button')){closeAllMenus();return;}
+  if(!e.target.closest('.dropdown'))closeAllMenus();
+});
 loadAll(true);
 </script>
 </body>
