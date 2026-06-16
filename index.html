@@ -84,7 +84,7 @@
 <div class="header">
   <h1>🎓 Eğitim &amp; Polivalans</h1>
   <div class="actions">
-    <button class="btn btn-x" onclick="openChanges()">📝 Değişikliklerim <span id="chgCount" style="background:#fff;color:#1e7e4a;border-radius:10px;padding:0 6px;font-size:.82em;"></span></button>
+    <button class="btn btn-x" id="adminBtn" onclick="toggleAdmin()">🔒 Admin</button>
     <button class="btn btn-ls" id="btnLs" onclick="refreshFromLeanSys()">📥 LeanSys'ten Güncelle</button>
     <button class="btn btn-x" onclick="loadAll(true)">🔄 Yenile</button>
   </div>
@@ -106,7 +106,7 @@
       <b style="color:#334155;">Filtre:</b>
       <select id="dashYil" onchange="renderDash()"><option value="">Tüm Yıllar</option></select>
       <select id="dashLok" onchange="renderDash()"><option value="">Tüm Lokasyonlar</option></select>
-      <button class="btn" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
+      <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
       <span class="muted" id="dashInfo"></span>
     </div>
     <div class="stats">
@@ -222,13 +222,14 @@
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
-        <div class="dropdown">
+        <div class="dropdown admin-only">
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('polMenu')">⚙️ İşlemler ▾</button>
           <div class="dropdown-menu" id="polMenu">
             <button onclick="topluOtoPolDeger()">🎯 Otomatik Değerlendir</button>
             <button onclick="topluHedefEgitimAc()">🎓 Hedef Eğitimlerini Planla</button>
-            <hr>
             <button onclick="openMPol()">✏️ Manuel Yetkinlik Ekle</button>
+            <hr>
+            <button onclick="openChanges()">📝 Değişikliklerim <span class="chg-count" style="background:#dcfce7;color:#166534;border-radius:10px;padding:0 6px;font-size:.85em;"></span></button>
           </div>
         </div>
         <div class="legend">
@@ -302,12 +303,13 @@
           <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
-        <div class="dropdown">
+        <div class="dropdown admin-only">
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('egtMenu')">⚙️ İşlemler ▾</button>
           <div class="dropdown-menu" id="egtMenu">
             <button onclick="topluOtoDeger()">🎯 Otomatik Değerlendir</button>
-            <hr>
             <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
+            <hr>
+            <button onclick="openChanges()">📝 Değişikliklerim <span class="chg-count" style="background:#dcfce7;color:#166534;border-radius:10px;padding:0 6px;font-size:.85em;"></span></button>
           </div>
         </div>
       </div>
@@ -1520,7 +1522,17 @@ async function silPlanById(id){
 
 // ===================== DEĞİŞİKLİKLERİM (yönetim) =====================
 function changesSayisi(){return POL.filter(r=>r.kaynak==='manuel').length+EGT.filter(r=>r.kaynak==='manuel').length+HEDEF.size+PDEGER.size+DEGER.size+PLAN.size;}
-function updateChgCount(){const el=document.getElementById('chgCount');if(el)el.textContent=changesSayisi()||'';}
+function updateChgCount(){const c=changesSayisi();document.querySelectorAll('.chg-count').forEach(el=>el.textContent=c||'');}
+// ── Admin modu (işlemler yalnızca admin) ──
+const ADMIN_SIFRE='sanifoam2026';
+function isAdmin(){return localStorage.getItem('egt_admin')==='1';}
+function applyAdmin(){const a=isAdmin();document.querySelectorAll('.admin-only').forEach(el=>el.style.display=a?'':'none');const b=document.getElementById('adminBtn');if(b){b.textContent=a?'🔓 Admin':'🔒 Admin';b.style.background=a?'#16a34a':'';}}
+function toggleAdmin(){
+  if(isAdmin()){localStorage.removeItem('egt_admin');applyAdmin();toast('Admin modundan çıkıldı','#64748b',1500);return;}
+  const s=prompt('Yönetici (admin) şifresi:'); if(s===null)return;
+  if(s===ADMIN_SIFRE){localStorage.setItem('egt_admin','1');applyAdmin();toast('🔓 Admin modu açıldı — işlemler görünür','#16a34a',2000);}
+  else toast('❌ Yanlış şifre','#dc2626',2000);
+}
 function grupHtml(baslik,items){
   if(!items.length)return '';
   return `<div style="margin-bottom:14px;"><div style="font-weight:700;color:#1e7e4a;border-bottom:2px solid #dcfce7;padding-bottom:4px;margin-bottom:6px;">${baslik} <span class="muted" style="font-weight:400;">(${items.length})</span></div>
@@ -1733,6 +1745,7 @@ document.addEventListener('click',e=>{
   if(e.target.closest('.dropdown-menu button')){closeAllMenus();return;}
   if(!e.target.closest('.dropdown'))closeAllMenus();
 });
+applyAdmin();
 loadAll(true);
 </script>
 </body>
