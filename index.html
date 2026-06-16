@@ -747,7 +747,6 @@ function renderPolDash(){
   if(yf==='kritik') mkArr=mkArr.filter(m=>m.yetkin<=1);
   else if(yf==='iyi') mkArr=mkArr.filter(m=>m.yetkin>=2);
   mkArr.sort((a,b)=>a.yetkin-b.yetkin||String(a.adi).localeCompare(String(b.adi),'tr'));
-  const kritikSay=[...mkMap.values()].filter(m=>m.yetkin<=1).length;
   document.getElementById('pdYedekInfo').textContent=`${mkMap.size} makine/proses · ${kritikSay} tanesi kritik (≤1 yetkin kişi)`;
   document.getElementById('pdYedekBody').innerHTML=mkArr.slice(0,500).map(m=>{
     const dur = m.yetkin===0 ? '<span class="badge b-no">🔴 Yetkin yok</span>'
