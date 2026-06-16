@@ -50,6 +50,23 @@
   .chart-card h3{font-size:.95em;color:#334155;margin-bottom:12px;}
   .chart-box{position:relative;height:300px;}
   .chart-box.tall{height:340px;}
+  .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:center;justify-content:center;z-index:10000;padding:16px;}
+  .modal-bg.show{display:flex;}
+  .modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 20px 50px rgba(0,0,0,.3);}
+  .modal-head{background:linear-gradient(135deg,#1e7e4a,#2d5a3d);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center;}
+  .modal-head h3{font-size:1.05em;}
+  .modal-x{background:rgba(255,255,255,.2);border:none;color:#fff;width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:1.1em;}
+  .modal-body{padding:20px 22px;}
+  .modal-body .info{background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:16px;font-size:.88em;line-height:1.6;}
+  .fgroup{margin-bottom:14px;}
+  .fgroup label{display:block;font-size:.85em;font-weight:600;color:#334155;margin-bottom:5px;}
+  .fgroup select,.fgroup input,.fgroup textarea{width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:.9em;font-family:inherit;}
+  .fgroup textarea{resize:vertical;min-height:60px;}
+  .frow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  .modal-foot{padding:14px 22px;border-top:1px solid #eef2f5;display:flex;gap:10px;justify-content:flex-end;}
+  .sec-title{font-size:.8em;font-weight:700;color:#1e7e4a;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 10px;border-bottom:2px solid #dcfce7;padding-bottom:4px;}
+  .btn-dgr{background:#1e7e4a;color:#fff;padding:5px 11px;border:none;border-radius:6px;cursor:pointer;font-size:.82em;font-weight:600;}
+  .btn-dgr.done{background:#dcfce7;color:#166534;}
 </style>
 </head>
 <body>
@@ -100,6 +117,10 @@
     <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>📈 Yıllara Göre Adam·Saat (trend)</h3><div class="chart-box"><canvas id="chYil"></canvas></div></div>
       <div class="chart-card"><h3>🎯 Sınav Öncesi → Sonrası (eğitim etkinliği)</h3><div class="chart-box"><canvas id="chSinav"></canvas></div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>📋 Etkinlik Değerlendirme Sonuçları <span class="muted" id="degerInfo2" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chEtkinlik"></canvas></div></div>
+      <div class="chart-card"><h3>⭐ Eğitim Memnuniyet Puanı Dağılımı</h3><div class="chart-box"><canvas id="chPuan"></canvas></div></div>
     </div>
     <div class="grid3">
       <div class="chart-card"><h3>🧩 Polivalans Yetkinlik Dağılımı <span class="muted" style="font-weight:400;">(seçili lokasyon)</span></h3><div class="chart-box"><canvas id="chYet"></canvas></div></div>
@@ -179,6 +200,11 @@
         <select id="egtDurum" onchange="renderEgt()">
           <option value="">Tümü</option><option value="1">Gerçekleşen</option><option value="0">Gerçekleşmeyen</option>
         </select>
+        <select id="egtDeger" onchange="renderEgt()">
+          <option value="">Değerlendirme: Tümü</option>
+          <option value="var">✓ Değerlendirilmiş</option>
+          <option value="yok">Bekleyen</option>
+        </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
       </div>
       <div class="table-wrap">
@@ -195,10 +221,48 @@
             <th onclick="sortEgt('egitici')">Eğitici</th>
             <th onclick="sortEgt('gerceklesme')">Durum</th>
             <th onclick="sortEgt('not_sonra')">Not</th>
+            <th>Değerlendirme</th>
           </tr></thead>
           <tbody id="egtBody"></tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Değerlendirme Modalı -->
+<div class="modal-bg" id="degerModal">
+  <div class="modal">
+    <div class="modal-head"><h3>📋 Eğitim Değerlendirme</h3><button class="modal-x" onclick="closeDeger()">✕</button></div>
+    <div class="modal-body">
+      <div class="info" id="degerInfo"></div>
+      <div class="sec-title">Eğitim Değerlendirme (eğitim sonrası)</div>
+      <div class="fgroup">
+        <label>Eğitim Memnuniyet / Genel Puan</label>
+        <select id="dEgitimPuan">
+          <option value="">— Seçiniz —</option>
+          <option value="5">5 - Çok İyi</option><option value="4">4 - İyi</option>
+          <option value="3">3 - Orta</option><option value="2">2 - Zayıf</option><option value="1">1 - Yetersiz</option>
+        </select>
+      </div>
+      <div class="sec-title">Etkinlik Değerlendirme (eğitim sonrası uygulama)</div>
+      <div class="frow">
+        <div class="fgroup"><label>İşinde uygulandı mı?</label>
+          <select id="dUygulama"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+        <div class="fgroup"><label>Hedeflere ulaşıldı mı?</label>
+          <select id="dHedef"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+        <div class="fgroup"><label>Performans iyileşti mi?</label>
+          <select id="dPerformans"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+      </div>
+      <div class="fgroup"><label>Etkinlik Açıklaması / Gözlem</label>
+        <textarea id="dAciklama" placeholder="Eğitimin işe yansıması, gözlemler..."></textarea></div>
+      <div class="fgroup"><label>Değerlendiren</label>
+        <input type="text" id="dDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#fee2e2;color:#991b1b;" id="dSilBtn" onclick="silDeger()">🗑 Sil</button>
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeDeger()">İptal</button>
+      <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="kaydetDeger()">💾 Kaydet</button>
     </div>
   </div>
 </div>
@@ -209,6 +273,9 @@
 const SUPA='https://nnubrxbpthmkitueixbh.supabase.co';
 const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWJyeGJwdGhta2l0dWVpeGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI2MDIsImV4cCI6MjA5NjEzODYwMn0.CHZUOylf_q8kkOQbFf9VWZ6-doUTlynmAhahM2EuImE';
 let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4)
+let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
+let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
+let _modalUid=null;
 let polSort={k:'personel',dir:1}, egtSort={k:'yil',dir:-1};
 const SEVIYE={0:'Yetkinlik yok',1:'Başlangıç',2:'Gelişmekte',3:'Yetkin',4:'Uzman'};
 let charts={};
@@ -233,13 +300,16 @@ async function fetchAll(table,select){
 async function loadAll(notify){
   try{
     if(notify)toast('Veriler yükleniyor...','#3b82f6',2000);
-    let hedefRows=[];
-    [POL,EGT,hedefRows]=await Promise.all([
+    let hedefRows=[],degerRows=[];
+    [POL,EGT,hedefRows,degerRows]=await Promise.all([
       fetchAll('egt_polivalans','*'),
       fetchAll('egt_egitim','*'),
-      fetchAll('egt_hedef','id,hedef').catch(()=>[])   // tablo yoksa sessizce boş
+      fetchAll('egt_hedef','id,hedef').catch(()=>[]),        // tablo yoksa sessizce boş
+      fetchAll('egt_degerlendirme','*').catch(()=>[])
     ]);
     HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
+    DEGER=new Map(degerRows.map(r=>[r.uid,r]));
+    EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
     buildFilters(); renderDash(); renderPol(); renderEgt();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
   }catch(e){
@@ -345,6 +415,20 @@ function renderDash(){
   drawGrouped('chSinav',['Ortalama Not'],[
     {label:'Sınav Öncesi',data:[+ortOnce.toFixed(1)],color:'#f59e0b'},
     {label:'Sınav Sonrası',data:[+ortSonra.toFixed(1)],color:'#16a34a'}],true);
+
+  // --- Etkinlik değerlendirme sonuçları (filtreli eğitimlerin DEGER kayıtları) ---
+  const uidSet=new Set(e.map(r=>r.uid));
+  const dgr=[...DEGER.values()].filter(d=>uidSet.has(d.uid));
+  const say=(f,v)=>dgr.filter(d=>d[f]===v).length;
+  drawGrouped('chEtkinlik',['İşinde Uygulandı','Hedeflere Ulaşıldı','Performans İyileşti'],[
+    {label:'Evet',data:[say('etk_uygulama','Evet'),say('etk_hedef','Evet'),say('etk_performans','Evet')],color:'#16a34a'},
+    {label:'Kısmen',data:[say('etk_uygulama','Kısmen'),say('etk_hedef','Kısmen'),say('etk_performans','Kısmen')],color:'#f59e0b'},
+    {label:'Hayır',data:[say('etk_uygulama','Hayır'),say('etk_hedef','Hayır'),say('etk_performans','Hayır')],color:'#e11d48'}]);
+  document.getElementById('degerInfo2').textContent=dgr.length?`(${dgr.length} değerlendirme)`:'(henüz değerlendirme yok)';
+
+  // --- Eğitim memnuniyet puanı dağılımı ---
+  const puanC=[0,0,0,0,0]; dgr.forEach(d=>{const p=+d.egitim_puan;if(p>=1&&p<=5)puanC[p-1]++;});
+  drawBar('chPuan','Adet',['1','2','3','4','5'],puanC,'#9333ea');
 
   // --- Polivalans yetkinlik dağılımı (lokasyon filtreli) ---
   const yetC=[0,0,0,0]; polP.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
@@ -459,16 +543,66 @@ async function saveHedef(guid,mk,val){
   }catch(e){toast('❌ Hedef kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
 }
 
+// ===================== Eğitim Değerlendirme Modalı =====================
+function openDeger(uid){
+  _modalUid=uid;
+  const r=EGT_BY_UID.get(uid)||{};
+  const d=DEGER.get(uid)||{};
+  document.getElementById('degerInfo').innerHTML=
+    `<b>${esc(r.konu||'')}</b><br>👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 📅 ${esc(r.kayit_tarih||r.plan_tarih||'')} &nbsp;·&nbsp; ⏱ ${r.sure||'?'} saat<br>📍 ${esc(r.lokasyon||'')} &nbsp;·&nbsp; 👨‍🏫 ${esc(r.egitici||'')}`;
+  document.getElementById('dEgitimPuan').value=d.egitim_puan||'';
+  document.getElementById('dUygulama').value=d.etk_uygulama||'';
+  document.getElementById('dHedef').value=d.etk_hedef||'';
+  document.getElementById('dPerformans').value=d.etk_performans||'';
+  document.getElementById('dAciklama').value=d.etk_aciklama||'';
+  document.getElementById('dDegerlendiren').value=d.degerlendiren||'';
+  document.getElementById('dSilBtn').style.display=DEGER.has(uid)?'inline-flex':'none';
+  document.getElementById('degerModal').classList.add('show');
+}
+function closeDeger(){document.getElementById('degerModal').classList.remove('show');_modalUid=null;}
+async function kaydetDeger(){
+  if(!_modalUid)return;
+  const rec={
+    uid:_modalUid,
+    egitim_puan:document.getElementById('dEgitimPuan').value?+document.getElementById('dEgitimPuan').value:null,
+    etk_uygulama:document.getElementById('dUygulama').value||null,
+    etk_hedef:document.getElementById('dHedef').value||null,
+    etk_performans:document.getElementById('dPerformans').value||null,
+    etk_aciklama:document.getElementById('dAciklama').value.trim()||null,
+    degerlendiren:document.getElementById('dDegerlendiren').value.trim()||null
+  };
+  DEGER.set(_modalUid,rec);
+  closeDeger(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?on_conflict=uid`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('📋 Değerlendirme kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+async function silDeger(){
+  if(!_modalUid)return; const uid=_modalUid;
+  DEGER.delete(uid); closeDeger(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    toast('🗑 Değerlendirme silindi','#64748b',1500);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
 // ===================== EGITIM =====================
 function egtFiltered(){
   const q=document.getElementById('egtSearch').value.toLowerCase().trim();
   const yil=document.getElementById('egtYil').value;
   const lok=document.getElementById('egtLok').value;
   const dur=document.getElementById('egtDurum').value;
+  const dgr=document.getElementById('egtDeger').value;
   return EGT.filter(r=>{
     if(yil&&r.yil!==yil)return false;
     if(lok&&r.lokasyon!==lok)return false;
     if(dur!==''&&String(r.gerceklesme||0)!==dur)return false;
+    if(dgr==='var'&&!DEGER.has(r.uid))return false;
+    if(dgr==='yok'&&DEGER.has(r.uid))return false;
     if(q){const s=((r.personel||'')+' '+(r.konu||'')+' '+(r.egitici||'')+' '+(r.turu||'')).toLowerCase();if(!s.includes(q))return false;}
     return true;
   });
@@ -481,13 +615,18 @@ function renderEgt(){
   document.getElementById('egtOk').textContent=rows.filter(r=>r.gerceklesme).length;
   document.getElementById('egtKonu').textContent=new Set(rows.map(r=>r.konu)).size;
   const cap=rows.slice(0,3000);
-  document.getElementById('egtBody').innerHTML=cap.map(r=>`<tr>
+  document.getElementById('egtBody').innerHTML=cap.map(r=>{
+    const d=DEGER.get(r.uid);
+    const dgrBtn=d
+      ? `<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${d.egitim_puan?d.egitim_puan+'/5':'Görüntüle'}</button>`
+      : `<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+    return `<tr>
     <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
     <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
-    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td></tr>`).join('')
-    +(rows.length>3000?`<tr><td colspan="11" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td><td>${dgrBtn}</td></tr>`;}).join('')
+    +(rows.length>3000?`<tr><td colspan="12" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
 }
 
 // ===================== LeanSys Güncelle =====================
@@ -512,12 +651,13 @@ async function refreshFromLeanSys(){
 function exportXlsx(which){
   let rows,name;
   if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):''};});name='polivalans';}
-  else if(which==='egt'){rows=egtFiltered().map(r=>({Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra}));name='egitim';}
+  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Eğitim Puanı':d.egitim_puan||'','Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
   XLSX.writeFile(wb,name+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
 }
 
+document.getElementById('degerModal').addEventListener('click',e=>{if(e.target.id==='degerModal')closeDeger();});
 loadAll(true);
 </script>
 </body>
