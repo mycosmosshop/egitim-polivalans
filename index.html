@@ -156,15 +156,16 @@
       <b style="color:#334155;">Filtre:</b>
       <select id="pdLok" onchange="renderPolDash()"><option value="">Tüm Lokasyonlar</option></select>
       <select id="pdDept" onchange="renderPolDash()"><option value="">Tüm Departmanlar</option></select>
+      <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpiPol()">🎯 KPI Hedefleri</button>
       <span class="muted" id="pdInfo"></span>
     </div>
     <div class="stats">
       <div class="stat"><div class="v" id="pdYetk">—</div><div class="l">Yetkinlik Kaydı</div></div>
       <div class="stat"><div class="v" id="pdPers">—</div><div class="l">Personel</div></div>
-      <div class="stat"><div class="v" id="pdMak">—</div><div class="l">Makine/Proses</div></div>
-      <div class="stat amber"><div class="v" id="pdOrt">—</div><div class="l">Ort. Yetkinlik</div></div>
-      <div class="stat blue"><div class="v" id="pdHedef">—</div><div class="l">Hedef Tanımlı</div></div>
-      <div class="stat alt"><div class="v" id="pdGap">—</div><div class="l">Eğitim Gereken</div></div>
+      <div class="stat amber"><div class="v" id="pdOrt">—</div><div class="l" id="pdOrtL">Ort. Yetkinlik</div></div>
+      <div class="stat blue"><div class="v" id="pdYetkin">—</div><div class="l" id="pdYetkinL">Yetkin Kapsama</div></div>
+      <div class="stat alt"><div class="v" id="pdKritik">—</div><div class="l" id="pdKritikL">Kritik Makine</div></div>
+      <div class="stat"><div class="v" id="pdKpi">—</div><div class="l">KPI Durumu</div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🧩 Yetkinlik Seviye Dağılımı</h3><div class="chart-box tall"><canvas id="pdChSev"></canvas></div></div>
@@ -529,6 +530,23 @@
   </div>
 </div>
 
+<!-- Polivalans KPI Hedefleri Modalı -->
+<div class="modal-bg" id="kpiPolModal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);"><h3>🎯 Polivalans KPI Hedefleri</h3><button class="modal-x" onclick="closeKpiPol()">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:.85em;margin-bottom:14px;">Firma geneli yetkinlik hedefleri. Polivalans Paneli'nde gerçekleşmeyle karşılaştırılır.</div>
+      <div class="fgroup"><label>Ortalama Yetkinlik Hedefi (1–4)</label><input type="number" id="kpiPolOrt" step="0.1" min="1" max="4" placeholder="örn. 2.5"></div>
+      <div class="fgroup"><label>Yetkin (Sv3-4) Kapsama Oranı Hedefi (%)</label><input type="number" id="kpiPolYetkin" step="1" min="0" max="100" placeholder="örn. 60"></div>
+      <div class="fgroup"><label>Maksimum Kritik Makine Oranı (%) <span class="muted">— tek-kişiye-bağımlı</span></label><input type="number" id="kpiPolKritik" step="1" min="0" max="100" placeholder="örn. 20"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeKpiPol()">İptal</button>
+      <button class="btn" style="background:#0891b2;color:#fff;" onclick="kaydetKpiPol()">💾 Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- Eğitim Planla Modalı (gap kapatma) -->
 <div class="modal-bg" id="planModal">
   <div class="modal">
@@ -672,13 +690,30 @@ function renderPolDash(){
   const ort=yetler.length?(yetler.reduce((s,v)=>s+v,0)/yetler.length):0;
   let hedefli=0,gapli=0;
   p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  // makine bazlı yetkin (sv3+) sayıları
+  const mkY=new Map(); p.forEach(r=>{const k=r.makine_kodu||r.makine_adi;if(!mkY.has(k))mkY.set(k,0);if((+r.yetenek||0)>=3)mkY.set(k,mkY.get(k)+1);});
+  const makSay=mkY.size, kritikSay=[...mkY.values()].filter(v=>v<=1).length;
+  const kritikOran=makSay?(kritikSay/makSay*100):0;
+  const yetkinSay=p.filter(r=>(+r.yetenek||0)>=3).length, yetkinOran=p.length?(yetkinSay/p.length*100):0;
   document.getElementById('pdYetk').textContent=p.length.toLocaleString('tr');
   document.getElementById('pdPers').textContent=new Set(p.map(r=>r.personel)).size;
-  document.getElementById('pdMak').textContent=new Set(p.map(r=>r.makine_kodu)).size;
   document.getElementById('pdOrt').textContent=ort?ort.toFixed(2):'—';
-  document.getElementById('pdHedef').textContent=hedefli;
-  document.getElementById('pdGap').textContent=gapli;
-  document.getElementById('pdInfo').textContent=`${p.length} yetkinlik kaydı`;
+  document.getElementById('pdYetkin').textContent='%'+yetkinOran.toFixed(0);
+  document.getElementById('pdKritik').textContent=kritikSay+(makSay?` (%${kritikOran.toFixed(0)})`:'');
+  document.getElementById('pdInfo').textContent=`${makSay} makine · ${hedefli} hedefli · ${gapli} eğitim gereken`;
+  // --- Polivalans KPI hedef karşılaştırma ---
+  const hOrt=parseFloat(AYAR.kpi_pol_ort)||0, hYetkin=parseFloat(AYAR.kpi_pol_yetkin)||0, hKritik=parseFloat(AYAR.kpi_pol_kritik);
+  document.getElementById('pdOrtL').textContent=hOrt?`Ort. Yetkinlik (hedef ${hOrt})`:'Ort. Yetkinlik';
+  document.getElementById('pdOrt').style.color=hOrt?(ort>=hOrt?'#16a34a':'#e11d48'):'#d97706';
+  document.getElementById('pdYetkinL').textContent=hYetkin?`Yetkin Kapsama (hedef %${hYetkin})`:'Yetkin Kapsama (Sv3-4)';
+  document.getElementById('pdYetkin').style.color=hYetkin?(yetkinOran>=hYetkin?'#16a34a':'#e11d48'):'#2563eb';
+  document.getElementById('pdKritikL').textContent=(!isNaN(hKritik))?`Kritik Makine (maks %${hKritik})`:'Kritik Makine (≤1 yetkin)';
+  document.getElementById('pdKritik').style.color=(!isNaN(hKritik))?(kritikOran<=hKritik?'#16a34a':'#e11d48'):'#e11d48';
+  const pdKpiEl=document.getElementById('pdKpi');
+  if(!hOrt&&!hYetkin&&isNaN(hKritik)){pdKpiEl.textContent='—';pdKpiEl.style.color='#94a3b8';}
+  else{let t=0,n=0;
+    if(hOrt){n++;if(ort>=hOrt)t++;} if(hYetkin){n++;if(yetkinOran>=hYetkin)t++;} if(!isNaN(hKritik)){n++;if(kritikOran<=hKritik)t++;}
+    pdKpiEl.textContent=t+'/'+n; pdKpiEl.style.color=t===n?'#16a34a':t>0?'#d97706':'#e11d48';}
   // seviye dağılımı
   const yetC=[0,0,0,0]; p.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
   drawDoughnut('pdChSev',['1 - Başlangıç','2 - Gelişmekte','3 - Yetkin','4 - Uzman'],yetC,['#ef4444','#f59e0b','#3b82f6','#16a34a']);
@@ -1002,9 +1037,12 @@ function renderDash(){
   const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
   ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
-  drawGrouped('chAylik',AYLAR,[
+  const hAy=parseFloat(AYAR.kpi_ay_saat)||0;
+  const aylikDs=[
     {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
-    {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}]);
+    {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}];
+  if(hAy)aylikDs.push({label:`Hedef (${hAy})`,data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
+  drawGrouped('chAylik',AYLAR,aylikDs);
 
   // --- Gerçekleşme donut ---
   drawDoughnut('chDurum',['Gerçekleşen','Gerçekleşmeyen'],[ger.length,e.length-ger.length],['#16a34a','#e11d48']);
@@ -1065,7 +1103,10 @@ function renderDash(){
     kyMap[r.yil].s+=num(r.sure); kyMap[r.yil].k.add(r.personel_guid||r.personel);
   });
   const kyE=Object.entries(kyMap).sort((a,b)=>a[0].localeCompare(b[0]));
-  drawBar('chKisiYil','Saat/Kişi',kyE.map(x=>x[0]),kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),'#0891b2');
+  const hKS=parseFloat(AYAR.kpi_kisi_yil_saat)||0;
+  const kisiDs=[{label:'Saat/Kişi',data:kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),color:'#0891b2'}];
+  if(hKS)kisiDs.push({label:`Hedef (${hKS})`,data:kyE.map(()=>hKS),type:'line',color:'#e11d48'});
+  drawGrouped('chKisiYil',kyE.map(x=>x[0]),kisiDs);
 
   // --- Almayanlar listesi ---
   almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
@@ -1093,7 +1134,9 @@ function drawDoughnut(id,labels,data,colors){
 function drawGrouped(id,labels,datasets,horizontal){
   destroyChart(id);
   charts[id]=new Chart(document.getElementById(id),{type:'bar',
-    data:{labels,datasets:datasets.map(d=>({label:d.label,data:d.data,backgroundColor:d.color,borderRadius:5}))},
+    data:{labels,datasets:datasets.map(d=>d.type==='line'
+      ? {label:d.label,data:d.data,type:'line',borderColor:d.color,borderDash:[7,5],pointRadius:0,fill:false,borderWidth:2,order:0}
+      : {label:d.label,data:d.data,backgroundColor:d.color,borderRadius:5,order:1})},
     options:{indexAxis:horizontal?'y':'x',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{position:'top',labels:{font:{size:11},boxWidth:14}}},
       scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}},beginAtZero:true}}}});
@@ -1597,6 +1640,23 @@ async function kaydetKpi(){
   try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 KPI hedefleri kaydedildi','#16a34a',2000);}
   catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
 }
+function openKpiPol(){
+  document.getElementById('kpiPolOrt').value=AYAR.kpi_pol_ort||'';
+  document.getElementById('kpiPolYetkin').value=AYAR.kpi_pol_yetkin||'';
+  document.getElementById('kpiPolKritik').value=AYAR.kpi_pol_kritik||'';
+  document.getElementById('kpiPolModal').classList.add('show');
+}
+function closeKpiPol(){document.getElementById('kpiPolModal').classList.remove('show');}
+async function kaydetKpiPol(){
+  const rows=[
+    {anahtar:'kpi_pol_ort',deger:document.getElementById('kpiPolOrt').value||''},
+    {anahtar:'kpi_pol_yetkin',deger:document.getElementById('kpiPolYetkin').value||''},
+    {anahtar:'kpi_pol_kritik',deger:document.getElementById('kpiPolKritik').value||''}
+  ];
+  rows.forEach(r=>AYAR[r.anahtar]=r.deger); closeKpiPol(); renderPolDash();
+  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 Polivalans KPI hedefleri kaydedildi','#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
 
 // ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
 async function topluOtoDeger(){
@@ -1739,6 +1799,7 @@ document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id
 document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
 document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
 document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
+document.getElementById('kpiPolModal').addEventListener('click',e=>{if(e.target.id==='kpiPolModal')closeKpiPol();});
 function closeAllMenus(){document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('show'));}
 function toggleMenu(id){const m=document.getElementById(id);const open=m.classList.contains('show');closeAllMenus();if(!open)m.classList.add('show');}
 document.addEventListener('click',e=>{
