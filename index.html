@@ -174,9 +174,21 @@
           <span><i class="yet yet4" style="width:16px;height:16px;line-height:16px;"></i>4</span>
         </div>
       </div>
+      <div id="polBulkBar" style="display:none;background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 14px;margin-bottom:10px;align-items:center;gap:10px;flex-wrap:wrap;">
+        <b id="polSelCount" style="color:#1e40af;">0 seçili</b>
+        <span class="muted">→ Toplu Hedef:</span>
+        <button class="btn-dgr" style="background:#ef4444;" onclick="topluHedef(1)">1</button>
+        <button class="btn-dgr" style="background:#f59e0b;" onclick="topluHedef(2)">2</button>
+        <button class="btn-dgr" style="background:#3b82f6;" onclick="topluHedef(3)">3</button>
+        <button class="btn-dgr" style="background:#16a34a;" onclick="topluHedef(4)">4</button>
+        <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="topluEgitimAc()">🎓 Toplu Eğitim Planla</button>
+        <button class="btn" style="background:#fee2e2;color:#991b1b;" onclick="topluHedefSil()">Hedefi Temizle</button>
+        <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="polSelTemizle()">✕ Seçimi Bırak</button>
+      </div>
       <div class="table-wrap">
         <table id="polTable">
           <thead><tr>
+            <th style="width:32px;"><input type="checkbox" id="polChkAll" onclick="togglePolSelAll(this.checked)" title="Görünenleri seç"></th>
             <th onclick="sortPol('personel')">Personel</th>
             <th onclick="sortPol('lokasyon')">Lokasyon</th>
             <th onclick="sortPol('departman')">Departman</th>
@@ -386,6 +398,8 @@ let POL_BY_KEY=new Map();               // "guid|makine_kodu" -> polivalans kayd
 let _polModalKey=null;
 let PLAN=new Map();                     // PLAN: "guid|makine_kodu" -> planlanan eğitim
 let _planKey=null;
+let _polSel=new Set();                  // toplu seçim (polivalans key'leri)
+let _planBulk=false;                    // toplu eğitim planla modu
 // Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
 const PKRITER={
   1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
@@ -769,6 +783,7 @@ function renderPol(){
   document.getElementById('polHedefli').textContent=hedefli.toLocaleString('tr');
   document.getElementById('polGap').textContent=gapli.toLocaleString('tr');
   const cap=rows.slice(0,2000);
+  window._polShownKeys=cap.map(hedefKey);
   document.getElementById('polBody').innerHTML=cap.map(r=>{
     const key=hedefKey(r); const mevcut=+r.yetenek||0; const h=HEDEF.get(key)||'';
     const gap=h?h-mevcut:0;
@@ -788,14 +803,17 @@ function renderPol(){
       ? `<span class="badge b-ok" style="cursor:pointer;" title="Değerlendirmeyi aç">📋 ${esc(pd.deger_tarihi)}${pd.hesaplanan_seviye?' · sv.'+pd.hesaplanan_seviye:''}</span>${planEk}`
       : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
     const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
+    const chk=_polSel.has(key)?'checked':'';
     return `<tr>
+      <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
       <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
       <td class="muted">${esc(r.makinegrup_adi)}</td>${mkCell}<td class="muted">${esc(r.makine_kodu)}</td>
       <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
       <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
       <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
   }).join('')
-    +(rows.length>2000?`<tr><td colspan="11" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    +(rows.length>2000?`<tr><td colspan="12" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
+  polBulkUpdate();
 }
 function escAttr(s){return (s==null?'':String(s)).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 async function saveHedef(guid,mk,val){
@@ -963,7 +981,7 @@ async function silPolDeger(){
 
 // ===================== Eğitim Planla (gap kapatma) =====================
 function openEgitimPlan(guid,mk){
-  const key=guid+'|'+mk; _planKey=key;
+  const key=guid+'|'+mk; _planKey=key; _planBulk=false;
   const r=POL_BY_KEY.get(key)||{}; const mevcut=+r.yetenek||0; const hedef=HEDEF.get(key)||0;
   const pl=PLAN.get(key);
   document.getElementById('planInfo').innerHTML=
@@ -980,19 +998,33 @@ function openEgitimPlan(guid,mk){
   document.getElementById('plSilBtn').style.display=pl?'inline-flex':'none';
   document.getElementById('planModal').classList.add('show');
 }
-function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;}
+function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;}
 async function kaydetPlan(){
-  if(!_planKey)return; const [guid,mk]=_planKey.split('|');
-  const r=POL_BY_KEY.get(_planKey)||{}; const hedef=HEDEF.get(_planKey)||null;
   const tarih=document.getElementById('plTarih').value;
   if(!tarih){toast('⚠ Planlanan tarih gerekli','#d97706',2500);return;}
-  const rec={id:_planKey,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
-    lokasyon:r.lokasyon||null,departman:r.departman||null,
-    konu:document.getElementById('plKonu').value.trim()||null,plan_tarih:tarih,
-    tur:document.getElementById('plTur').value||null,egitici:document.getElementById('plEgitici').value.trim()||null,
+  const ortak={plan_tarih:tarih,tur:document.getElementById('plTur').value||null,
+    egitici:document.getElementById('plEgitici').value.trim()||null,
     sure:document.getElementById('plSure').value?+document.getElementById('plSure').value:null,
-    hedef_seviye:hedef,aciklama:document.getElementById('plAciklama').value.trim()||null,
-    durum:'Planlandı',olusturan:document.getElementById('plOlusturan').value.trim()||null};
+    aciklama:document.getElementById('plAciklama').value.trim()||null,durum:'Planlandı',
+    olusturan:document.getElementById('plOlusturan').value.trim()||null};
+  const konuInput=document.getElementById('plKonu').value.trim();
+  if(_planBulk){
+    const keys=[..._polSel]; const rows=keys.map(key=>{
+      const r=POL_BY_KEY.get(key)||{}; const [guid,mk]=key.split('|');
+      return {id:key,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+        lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:HEDEF.get(key)||null,
+        konu:konuInput||`${r.makine_adi||''} yetkinlik eğitimi`,...ortak};
+    });
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); closePlan(); renderPol(); renderEgt(); renderDash();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} kayıt eğitim planına eklendi`,'#16a34a',2200);}
+    catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+    return;
+  }
+  if(!_planKey)return; const [guid,mk]=_planKey.split('|');
+  const r=POL_BY_KEY.get(_planKey)||{};
+  const rec={id:_planKey,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+    lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:HEDEF.get(_planKey)||null,
+    konu:konuInput||null,...ortak};
   PLAN.set(_planKey,rec); closePlan(); renderPol(); renderEgt(); renderDash();
   try{
     await fetch(`${SUPA}/rest/v1/egt_plan?on_conflict=id`,{method:'POST',
@@ -1009,6 +1041,56 @@ async function silPlan(){
       headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
     toast('🗑 Plan silindi','#64748b',1500);
   }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== TOPLU İŞLEM (Polivalans) =====================
+function togglePolSel(guid,mk,on){const key=guid+'|'+mk;if(on)_polSel.add(key);else _polSel.delete(key);polBulkUpdate();}
+function togglePolSelAll(on){(window._polShownKeys||[]).forEach(k=>{if(on)_polSel.add(k);else _polSel.delete(k);});renderPol();}
+function polSelTemizle(){_polSel.clear();document.getElementById('polChkAll').checked=false;renderPol();}
+function polBulkUpdate(){
+  const bar=document.getElementById('polBulkBar');
+  bar.style.display=_polSel.size?'flex':'none';
+  document.getElementById('polSelCount').textContent=_polSel.size+' seçili';
+}
+async function _batchUpsert(table,rows,conflict){
+  for(let i=0;i<rows.length;i+=200){
+    await fetch(`${SUPA}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows.slice(i,i+200))});
+  }
+}
+async function topluHedef(sev){
+  if(!_polSel.size)return;
+  const keys=[..._polSel]; const rows=[];
+  keys.forEach(key=>{HEDEF.set(key,sev);const [guid,mk]=key.split('|');rows.push({id:key,personel_guid:guid,makine_kodu:mk,hedef:sev});});
+  renderPol();
+  try{await _batchUpsert('egt_hedef',rows,'id');toast(`🎯 ${keys.length} kayda Hedef ${sev} atandı`,'#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+async function topluHedefSil(){
+  if(!_polSel.size)return;
+  const keys=[..._polSel]; keys.forEach(k=>HEDEF.delete(k)); renderPol();
+  try{
+    for(let i=0;i<keys.length;i+=100){
+      const inList=keys.slice(i,i+100).map(k=>`"${k}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_hedef?id=in.(${encodeURIComponent(inList)})`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast(`${keys.length} kaydın hedefi temizlendi`,'#64748b',2000);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+function topluEgitimAc(){
+  if(!_polSel.size)return;
+  _planBulk=true; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Toplu Eğitim Planı</b><br><span class="muted">${_polSel.size} personel-yetkinlik kaydı seçili — hepsine aynı eğitim planlanacak.</span>`;
+  document.getElementById('plKonu').value='';
+  document.getElementById('plTarih').value='';
+  document.getElementById('plTur').value='İşbaşı Eğitim';
+  document.getElementById('plEgitici').value='';
+  document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';
+  document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
 }
 
 // ===================== EGITIM =====================
