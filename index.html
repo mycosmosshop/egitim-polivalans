@@ -440,6 +440,13 @@ async function loadAll(notify){
       fetchAll('egt_polivalans_deger','*').catch(()=>[]),
       fetchAll('egt_plan','*').catch(()=>[])
     ]);
+    // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
+    const _pm=new Map();
+    POL.forEach(r=>{
+      const k=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const e=_pm.get(k);
+      if(!e||String(r.tarih||'')>String(e.tarih||'')||(String(r.tarih||'')===String(e.tarih||'')&&(+r.pol_inckey||0)>(+e.pol_inckey||0))) _pm.set(k,r);
+    });
+    POL=[..._pm.values()];
     HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
     DEGER=new Map(degerRows.map(r=>[r.uid,r]));
     PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
