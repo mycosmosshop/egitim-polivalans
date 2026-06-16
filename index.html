@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eğitim & Polivalans</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',Tahoma,sans-serif;}
+  body{background:#eef2f5;color:#1e293b;}
+  .header{background:linear-gradient(135deg,#1e7e4a 0%,#2d5a3d 100%);color:#fff;padding:16px 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;box-shadow:0 2px 10px rgba(0,0,0,.15);}
+  .header h1{font-size:1.4em;display:flex;align-items:center;gap:10px;}
+  .header .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .btn{padding:9px 16px;border:none;border-radius:8px;cursor:pointer;font-size:.9em;font-weight:600;display:inline-flex;align-items:center;gap:6px;transition:.2s;}
+  .btn-ls{background:#fff;color:#2d5a3d;}
+  .btn-ls:hover{transform:scale(1.04);}
+  .btn-x{background:rgba(255,255,255,.2);color:#fff;}
+  .container{max-width:1700px;margin:18px auto;padding:0 18px;}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;}
+  .tab{padding:11px 22px;background:#fff;border:none;border-radius:10px 10px 0 0;cursor:pointer;font-size:1em;font-weight:600;color:#64748b;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+  .tab.active{background:#1e7e4a;color:#fff;}
+  .card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 10px rgba(0,0,0,.06);}
+  .stats{display:flex;gap:14px;margin-bottom:16px;flex-wrap:wrap;}
+  .stat{background:#fff;border-radius:10px;padding:14px 22px;box-shadow:0 1px 6px rgba(0,0,0,.06);min-width:130px;}
+  .stat .v{font-size:1.7em;font-weight:700;color:#1e7e4a;}
+  .stat .l{font-size:.8em;color:#64748b;}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center;}
+  .filters input,.filters select{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:.9em;}
+  .filters input[type=text]{min-width:200px;}
+  table{width:100%;border-collapse:collapse;font-size:.85em;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #eef2f5;white-space:nowrap;}
+  th{background:#f8fafc;position:sticky;top:0;cursor:pointer;user-select:none;color:#475569;font-weight:600;z-index:1;}
+  tbody tr:hover{background:#f1f8f4;}
+  .table-wrap{max-height:68vh;overflow:auto;border-radius:8px;border:1px solid #eef2f5;}
+  .yet{display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;border-radius:6px;font-weight:700;color:#fff;}
+  .yet1{background:#ef4444;} .yet2{background:#f59e0b;} .yet3{background:#3b82f6;} .yet4{background:#16a34a;}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.8em;font-weight:600;}
+  .b-ok{background:#dcfce7;color:#166534;} .b-no{background:#fee2e2;color:#991b1b;}
+  .muted{color:#94a3b8;}
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 22px;border-radius:10px;color:#fff;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.25);max-width:90vw;}
+  .legend{display:flex;gap:14px;align-items:center;font-size:.8em;color:#64748b;margin-left:auto;}
+  .legend span{display:inline-flex;align-items:center;gap:4px;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🎓 Eğitim &amp; Polivalans</h1>
+  <div class="actions">
+    <select id="lsYear" title="Bilgi amaçlı; LeanSys tüm yılları çeker"></select>
+    <button class="btn btn-ls" id="btnLs" onclick="refreshFromLeanSys()">📥 LeanSys'ten Güncelle</button>
+    <button class="btn btn-x" onclick="loadAll(true)">🔄 Yenile</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab active" id="tab-pol" onclick="showTab('pol')">🧩 Polivalans</button>
+    <button class="tab" id="tab-egt" onclick="showTab('egt')">📚 Eğitim Planı</button>
+  </div>
+
+  <!-- POLIVALANS -->
+  <div id="view-pol">
+    <div class="stats">
+      <div class="stat"><div class="v" id="polTotal">—</div><div class="l">Yetkinlik Kaydı</div></div>
+      <div class="stat"><div class="v" id="polPers">—</div><div class="l">Personel</div></div>
+      <div class="stat"><div class="v" id="polMak">—</div><div class="l">Makine/Proses</div></div>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="polSearch" placeholder="🔍 Personel / makine / proses ara..." oninput="renderPol()">
+        <select id="polDept" onchange="renderPol()"><option value="">Tüm Departmanlar</option></select>
+        <select id="polYet" onchange="renderPol()">
+          <option value="">Tüm Yetenekler</option>
+          <option value="1">1 - Başlangıç</option><option value="2">2 - Gelişmekte</option>
+          <option value="3">3 - Yetkin</option><option value="4">4 - Uzman/Eğitebilir</option>
+        </select>
+        <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
+        <div class="legend">
+          <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1</span>
+          <span><i class="yet yet2" style="width:16px;height:16px;line-height:16px;"></i>2</span>
+          <span><i class="yet yet3" style="width:16px;height:16px;line-height:16px;"></i>3</span>
+          <span><i class="yet yet4" style="width:16px;height:16px;line-height:16px;"></i>4</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="polTable">
+          <thead><tr>
+            <th onclick="sortPol('personel')">Personel</th>
+            <th onclick="sortPol('departman')">Departman</th>
+            <th onclick="sortPol('makinegrup_adi')">Proses Grubu</th>
+            <th onclick="sortPol('makine_adi')">Makine / Konu</th>
+            <th onclick="sortPol('makine_kodu')">Kod</th>
+            <th onclick="sortPol('yetenek')">Yetenek</th>
+            <th onclick="sortPol('tarih')">Tarih</th>
+          </tr></thead>
+          <tbody id="polBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- EGITIM -->
+  <div id="view-egt" class="hidden">
+    <div class="stats">
+      <div class="stat"><div class="v" id="egtTotal">—</div><div class="l">Eğitim Kaydı</div></div>
+      <div class="stat"><div class="v" id="egtOk">—</div><div class="l">Gerçekleşen</div></div>
+      <div class="stat"><div class="v" id="egtKonu">—</div><div class="l">Farklı Konu</div></div>
+    </div>
+    <div class="card">
+      <div class="filters">
+        <input type="text" id="egtSearch" placeholder="🔍 Personel / konu / eğitici ara..." oninput="renderEgt()">
+        <select id="egtYil" onchange="renderEgt()"><option value="">Tüm Yıllar</option></select>
+        <select id="egtDurum" onchange="renderEgt()">
+          <option value="">Tümü</option><option value="1">Gerçekleşen</option><option value="0">Gerçekleşmeyen</option>
+        </select>
+        <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
+      </div>
+      <div class="table-wrap">
+        <table id="egtTable">
+          <thead><tr>
+            <th onclick="sortEgt('yil')">Yıl</th>
+            <th onclick="sortEgt('konu')">Konu</th>
+            <th onclick="sortEgt('turu')">Tür</th>
+            <th onclick="sortEgt('plan_tarih')">Plan Tarihi</th>
+            <th onclick="sortEgt('kayit_tarih')">Gerç. Tarih</th>
+            <th onclick="sortEgt('personel')">Personel</th>
+            <th onclick="sortEgt('egitici')">Eğitici</th>
+            <th onclick="sortEgt('gerceklesme')">Durum</th>
+            <th onclick="sortEgt('not_sonra')">Not</th>
+          </tr></thead>
+          <tbody id="egtBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const SUPA='https://nnubrxbpthmkitueixbh.supabase.co';
+const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWJyeGJwdGhta2l0dWVpeGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI2MDIsImV4cCI6MjA5NjEzODYwMn0.CHZUOylf_q8kkOQbFf9VWZ6-doUTlynmAhahM2EuImE';
+let POL=[], EGT=[];
+let polSort={k:'personel',dir:1}, egtSort={k:'yil',dir:-1};
+
+function toast(msg,color='#1e7e4a',ms=3500){const t=document.getElementById('toast');t.textContent=msg;t.style.background=color;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',ms);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+async function fetchAll(table,select){
+  const rows=[],PAGE=1000;
+  for(let from=0;;from+=PAGE){
+    const res=await fetch(`${SUPA}/rest/v1/${table}?select=${select}&offset=${from}&limit=${PAGE}`,
+      {headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    if(!res.ok){throw new Error(table+' HTTP '+res.status+': '+(await res.text()).slice(0,150));}
+    const b=await res.json(); rows.push(...b); if(b.length<PAGE)break;
+  }
+  return rows;
+}
+
+async function loadAll(notify){
+  try{
+    if(notify)toast('Veriler yükleniyor...','#3b82f6',2000);
+    [POL,EGT]=await Promise.all([
+      fetchAll('egt_polivalans','*'),
+      fetchAll('egt_egitim','*')
+    ]);
+    buildFilters(); renderPol(); renderEgt();
+    if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
+  }catch(e){
+    console.error(e);
+    toast('❌ Yükleme hatası: '+e.message+' (Tablolar oluşturulmuş mu?)','#dc2626',7000);
+  }
+}
+
+function buildFilters(){
+  const depts=[...new Set(POL.map(r=>r.departman).filter(Boolean))].sort();
+  const dsel=document.getElementById('polDept');
+  dsel.innerHTML='<option value="">Tüm Departmanlar</option>'+depts.map(d=>`<option>${esc(d)}</option>`).join('');
+  const yils=[...new Set(EGT.map(r=>r.yil).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+  const ysel=document.getElementById('egtYil');
+  ysel.innerHTML='<option value="">Tüm Yıllar</option>'+yils.map(y=>`<option>${esc(y)}</option>`).join('');
+  const lsy=document.getElementById('lsYear');
+  if(!lsy.options.length){const cur=new Date().getFullYear();let o='';for(let y=cur;y>=2016;y--)o+=`<option>${y}</option>`;lsy.innerHTML=o;}
+}
+
+function showTab(t){
+  document.getElementById('view-pol').classList.toggle('hidden',t!=='pol');
+  document.getElementById('view-egt').classList.toggle('hidden',t!=='egt');
+  document.getElementById('tab-pol').classList.toggle('active',t==='pol');
+  document.getElementById('tab-egt').classList.toggle('active',t==='egt');
+}
+
+// ---- POLIVALANS ----
+function polFiltered(){
+  const q=document.getElementById('polSearch').value.toLowerCase().trim();
+  const dept=document.getElementById('polDept').value;
+  const yet=document.getElementById('polYet').value;
+  return POL.filter(r=>{
+    if(dept&&r.departman!==dept)return false;
+    if(yet&&String(r.yetenek)!==yet)return false;
+    if(q){const s=(r.personel+' '+r.makine_adi+' '+r.makine_kodu+' '+r.makinegrup_adi+' '+r.proses).toLowerCase();if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function sortPol(k){polSort.dir=polSort.k===k?-polSort.dir:1;polSort.k=k;renderPol();}
+function renderPol(){
+  let rows=polFiltered();
+  const k=polSort.k,d=polSort.dir;
+  rows.sort((a,b)=>{let x=a[k]??'',y=b[k]??'';if(k==='yetenek'){x=+x||0;y=+y||0;return (x-y)*d;}return String(x).localeCompare(String(y),'tr')*d;});
+  document.getElementById('polTotal').textContent=rows.length;
+  document.getElementById('polPers').textContent=new Set(rows.map(r=>r.personel)).size;
+  document.getElementById('polMak').textContent=new Set(rows.map(r=>r.makine_kodu)).size;
+  const cap=rows.slice(0,3000);
+  document.getElementById('polBody').innerHTML=cap.map(r=>`<tr>
+    <td><b>${esc(r.personel)}</b></td><td>${esc(r.departman)}</td>
+    <td class="muted">${esc(r.makinegrup_adi)}</td><td>${esc(r.makine_adi)}</td>
+    <td class="muted">${esc(r.makine_kodu)}</td>
+    <td><span class="yet yet${r.yetenek}">${esc(r.yetenek)}</span></td>
+    <td class="muted">${esc(r.tarih||'')}</td></tr>`).join('')
+    +(rows.length>3000?`<tr><td colspan="7" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+}
+
+// ---- EGITIM ----
+function egtFiltered(){
+  const q=document.getElementById('egtSearch').value.toLowerCase().trim();
+  const yil=document.getElementById('egtYil').value;
+  const dur=document.getElementById('egtDurum').value;
+  return EGT.filter(r=>{
+    if(yil&&r.yil!==yil)return false;
+    if(dur!==''&&String(r.gerceklesme||0)!==dur)return false;
+    if(q){const s=((r.personel||'')+' '+(r.konu||'')+' '+(r.egitici||'')+' '+(r.turu||'')).toLowerCase();if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function sortEgt(k){egtSort.dir=egtSort.k===k?-egtSort.dir:1;egtSort.k=k;renderEgt();}
+function renderEgt(){
+  let rows=egtFiltered();
+  const k=egtSort.k,d=egtSort.dir;
+  rows.sort((a,b)=>{let x=a[k]??'',y=b[k]??'';if(k==='not_sonra'||k==='gerceklesme'){x=+x||0;y=+y||0;return (x-y)*d;}return String(x).localeCompare(String(y),'tr')*d;});
+  document.getElementById('egtTotal').textContent=rows.length;
+  document.getElementById('egtOk').textContent=rows.filter(r=>r.gerceklesme).length;
+  document.getElementById('egtKonu').textContent=new Set(rows.map(r=>r.konu)).size;
+  const cap=rows.slice(0,3000);
+  document.getElementById('egtBody').innerHTML=cap.map(r=>`<tr>
+    <td>${esc(r.yil||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+    <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td>
+    <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
+    <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td></tr>`).join('')
+    +(rows.length>3000?`<tr><td colspan="9" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+}
+
+// ---- LeanSys Güncelle ----
+async function refreshFromLeanSys(){
+  const btn=document.getElementById('btnLs');btn.disabled=true;const old=btn.textContent;
+  btn.textContent='⏳ LeanSys güncelleniyor...';
+  try{
+    const ctrl=new AbortController();const tmo=setTimeout(()=>ctrl.abort(),300000);
+    const res=await fetch('http://127.0.0.1:17777/refreshegitim',{signal:ctrl.signal});
+    clearTimeout(tmo);
+    const j=await res.json();
+    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+'). Veriler yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
+    else{toast('⚠️ Güncelleme atlandı: '+((j&&j.error)||'bilinmeyen')+'. Mevcut veri gösteriliyor.','#d97706',6000);await loadAll(false);}
+  }catch(e){
+    console.warn(e);
+    toast('ℹ️ Yerel güncelleme servisi yanıt vermedi (VPN/agent kapalı olabilir). Mevcut Supabase verisi gösteriliyor.','#d97706',6000);
+    await loadAll(false);
+  }finally{btn.disabled=false;btn.textContent=old;}
+}
+
+// ---- Excel ----
+function exportXlsx(which){
+  let rows,name;
+  if(which==='pol'){rows=polFiltered().map(r=>({Personel:r.personel,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Yetenek:r.yetenek,Tarih:r.tarih}));name='polivalans';}
+  else{rows=egtFiltered().map(r=>({Yıl:r.yil,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,Yer:r.yeri}));name='egitim';}
+  const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
+  XLSX.writeFile(wb,name+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+loadAll(true);
+</script>
+</body>
+</html>
