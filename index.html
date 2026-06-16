@@ -100,13 +100,15 @@
       <b style="color:#334155;">Filtre:</b>
       <select id="dashYil" onchange="renderDash()"><option value="">Tüm Yıllar</option></select>
       <select id="dashLok" onchange="renderDash()"><option value="">Tüm Lokasyonlar</option></select>
+      <button class="btn" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
       <span class="muted" id="dashInfo"></span>
     </div>
     <div class="stats">
       <div class="stat blue"><div class="v" id="dAdamSaat">—</div><div class="l">Gerçekleşen Adam·Saat</div></div>
       <div class="stat"><div class="v" id="dPlanSaat">—</div><div class="l">Planlanan Adam·Saat</div></div>
       <div class="stat amber"><div class="v" id="dOran">—</div><div class="l">Gerçekleşme Oranı</div></div>
-      <div class="stat"><div class="v" id="dKisiSaat">—</div><div class="l">Kişi Başı Saat</div></div>
+      <div class="stat"><div class="v" id="dKisiSaat">—</div><div class="l" id="dKisiSaatL">Kişi Başı Saat</div></div>
+      <div class="stat"><div class="v" id="dKpi">—</div><div class="l" id="dKpiL">KPI Hedef Durumu</div></div>
       <div class="stat"><div class="v" id="dKisi">—</div><div class="l">Eğitim Alan Kişi</div></div>
       <div class="stat alt"><div class="v" id="dAlmayan">—</div><div class="l">Eğitim Almayan</div></div>
       <div class="stat"><div class="v" id="dGelisim">—</div><div class="l">Sınav Gelişimi (Ø)</div></div>
@@ -489,6 +491,23 @@
   </div>
 </div>
 
+<!-- KPI Hedefleri Modalı -->
+<div class="modal-bg" id="kpiModal">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);"><h3>🎯 Eğitim KPI Hedefleri</h3><button class="modal-x" onclick="closeKpi()">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:.85em;margin-bottom:14px;">Firma geneli hedefler. Gösterge Paneli'nde gerçekleşmeyle karşılaştırılır.</div>
+      <div class="fgroup"><label>Kişi Başı Yıllık Eğitim Saati Hedefi</label><input type="number" id="kpiKisiSaat" step="1" min="0" placeholder="örn. 16"></div>
+      <div class="fgroup"><label>Yıllık Plan Gerçekleşme Oranı Hedefi (%)</label><input type="number" id="kpiOran" step="1" min="0" max="100" placeholder="örn. 90"></div>
+      <div class="fgroup"><label>Aylık Toplam Adam·Saat Hedefi <span class="muted">(opsiyonel)</span></label><input type="number" id="kpiAySaat" step="1" min="0" placeholder="örn. 100"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeKpi()">İptal</button>
+      <button class="btn" style="background:#0891b2;color:#fff;" onclick="kaydetKpi()">💾 Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- Eğitim Planla Modalı (gap kapatma) -->
 <div class="modal-bg" id="planModal">
   <div class="modal">
@@ -534,6 +553,7 @@ let _polSel=new Set();                  // toplu seçim (polivalans key'leri)
 let _planBulk=false;                    // toplu eğitim planla modu (polivalans)
 let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid)
 let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
+let AYAR={};                            // KPI hedefleri vb. (egt_ayar)
 // Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
 const PKRITER={
   1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
@@ -574,6 +594,7 @@ async function loadAll(notify){
       fetchAll('egt_polivalans_deger','*').catch(()=>[]),
       fetchAll('egt_plan','*').catch(()=>[])
     ]);
+    try{ const ar=await fetchAll('egt_ayar','*'); AYAR={}; ar.forEach(r=>AYAR[r.anahtar]=r.deger); }catch(e){ AYAR={}; }
     // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
     const _pm=new Map();
     POL.forEach(r=>{
@@ -935,6 +956,21 @@ function renderDash(){
   document.getElementById('dPlanSaat').textContent=Math.round(planSaat).toLocaleString('tr');
   document.getElementById('dOran').textContent='%'+oran.toFixed(0);
   document.getElementById('dKisiSaat').textContent=kisiSaat.toFixed(1);
+  // --- KPI hedef karşılaştırma ---
+  const hKisiSaat=parseFloat(AYAR.kpi_kisi_yil_saat)||0, hOran=parseFloat(AYAR.kpi_oran)||0;
+  document.getElementById('dKisiSaatL').textContent=hKisiSaat?`Kişi Başı Saat (hedef ${hKisiSaat})`:'Kişi Başı Saat';
+  document.getElementById('dKisiSaat').style.color=hKisiSaat?(kisiSaat>=hKisiSaat?'#16a34a':'#e11d48'):'#1e7e4a';
+  document.getElementById('dOran').style.color=hOran?(oran>=hOran?'#16a34a':'#e11d48'):'#d97706';
+  const dKpiEl=document.getElementById('dKpi'), dKpiLEl=document.getElementById('dKpiL');
+  if(!hKisiSaat&&!hOran){dKpiEl.textContent='—';dKpiLEl.textContent='KPI hedefi tanımsız';dKpiEl.style.color='#94a3b8';}
+  else{
+    let tut=0,top=0;
+    if(hKisiSaat){top++;if(kisiSaat>=hKisiSaat)tut++;}
+    if(hOran){top++;if(oran>=hOran)tut++;}
+    dKpiEl.textContent=tut+'/'+top;
+    dKpiLEl.textContent=`KPI Tutturma${hOran?` · Oran %${oran.toFixed(0)}/${hOran}`:''}`;
+    dKpiEl.style.color=tut===top?'#16a34a':tut>0?'#d97706':'#e11d48';
+  }
   document.getElementById('dKisi').textContent=kisi.size.toLocaleString('tr');
   document.getElementById('dAlmayan').textContent=almayanlar.length.toLocaleString('tr');
   document.getElementById('dGelisim').textContent=ciftNot.length?((gelisim>=0?'+':'')+gelisim.toFixed(1)):'—';
@@ -1479,6 +1515,25 @@ async function silTumDegisiklik(){
   }catch(e){toast('Bazıları silinemedi: '+e.message,'#dc2626',4000);}
 }
 
+// ===================== KPI HEDEFLERİ =====================
+function openKpi(){
+  document.getElementById('kpiKisiSaat').value=AYAR.kpi_kisi_yil_saat||'';
+  document.getElementById('kpiOran').value=AYAR.kpi_oran||'';
+  document.getElementById('kpiAySaat').value=AYAR.kpi_ay_saat||'';
+  document.getElementById('kpiModal').classList.add('show');
+}
+function closeKpi(){document.getElementById('kpiModal').classList.remove('show');}
+async function kaydetKpi(){
+  const rows=[
+    {anahtar:'kpi_kisi_yil_saat',deger:document.getElementById('kpiKisiSaat').value||''},
+    {anahtar:'kpi_oran',deger:document.getElementById('kpiOran').value||''},
+    {anahtar:'kpi_ay_saat',deger:document.getElementById('kpiAySaat').value||''}
+  ];
+  rows.forEach(r=>AYAR[r.anahtar]=r.deger); closeKpi(); renderDash();
+  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 KPI hedefleri kaydedildi','#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+
 // ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
 async function topluOtoDeger(){
   const aday=egtFiltered().filter(r=>!r._plan&&r.gerceklesme&&!DEGER.has(r.uid));
@@ -1619,6 +1674,7 @@ document.getElementById('planModal').addEventListener('click',e=>{if(e.target.id
 document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id==='mPolModal')closeMPol();});
 document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
 document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
+document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
 loadAll(true);
 </script>
 </body>
