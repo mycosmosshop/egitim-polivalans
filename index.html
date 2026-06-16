@@ -78,6 +78,7 @@
 <div class="header">
   <h1>🎓 Eğitim &amp; Polivalans</h1>
   <div class="actions">
+    <button class="btn btn-x" onclick="openChanges()">📝 Değişikliklerim <span id="chgCount" style="background:#fff;color:#1e7e4a;border-radius:10px;padding:0 6px;font-size:.82em;"></span></button>
     <button class="btn btn-ls" id="btnLs" onclick="refreshFromLeanSys()">📥 LeanSys'ten Güncelle</button>
     <button class="btn btn-x" onclick="loadAll(true)">🔄 Yenile</button>
   </div>
@@ -471,6 +472,21 @@
   </div>
 </div>
 
+<!-- Değişikliklerim Modalı -->
+<div class="modal-bg" id="changesModal">
+  <div class="modal" style="max-width:780px;">
+    <div class="modal-head"><h3>📝 Benim Değişikliklerim</h3><button class="modal-x" onclick="closeChanges()">✕</button></div>
+    <div class="modal-body">
+      <div class="muted" style="font-size:.85em;margin-bottom:12px;">Bu kayıtlar <b>sizin yaptığınız</b> giriş/değişikliklerdir. LeanSys güncellemesinde <b>korunur</b>; yalnızca buradan silebilirsiniz. Sildiğiniz manuel kayıtlar, sonraki LeanSys yüklemesinde (varsa) geri gelebilir.</div>
+      <div id="changesBody"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#fee2e2;color:#991b1b;" onclick="silTumDegisiklik()">🗑 Tümünü Sil</button>
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeChanges()">Kapat</button>
+    </div>
+  </div>
+</div>
+
 <!-- Eğitim Planla Modalı (gap kapatma) -->
 <div class="modal-bg" id="planModal">
   <div class="modal">
@@ -569,7 +585,7 @@ async function loadAll(notify){
     PLAN=new Map(planRows.map(r=>[r.id,r]));
     EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
     POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
-    buildFilters(); renderDash(); renderPol(); renderEgt();
+    buildFilters(); renderDash(); renderPol(); renderEgt(); updateChgCount();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
   }catch(e){
     console.error(e);
@@ -1412,6 +1428,55 @@ async function silPlanById(id){
   catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
 }
 
+// ===================== DEĞİŞİKLİKLERİM (yönetim) =====================
+function changesSayisi(){return POL.filter(r=>r.kaynak==='manuel').length+EGT.filter(r=>r.kaynak==='manuel').length+HEDEF.size+PDEGER.size+DEGER.size+PLAN.size;}
+function updateChgCount(){const el=document.getElementById('chgCount');if(el)el.textContent=changesSayisi()||'';}
+function grupHtml(baslik,items){
+  if(!items.length)return '';
+  return `<div style="margin-bottom:14px;"><div style="font-weight:700;color:#1e7e4a;border-bottom:2px solid #dcfce7;padding-bottom:4px;margin-bottom:6px;">${baslik} <span class="muted" style="font-weight:400;">(${items.length})</span></div>
+    <div style="max-height:200px;overflow:auto;">`+items.slice(0,300).map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f5f9;font-size:.86em;">
+      <span>${esc(o.txt)}</span><button class="btn-dgr" style="background:#fee2e2;color:#991b1b;flex-shrink:0;" onclick="${o.sil}">🗑</button></div>`).join('')+
+    (items.length>300?`<div class="muted">… ${items.length-300} daha</div>`:'')+`</div></div>`;
+}
+function openChanges(){
+  const manPol=POL.filter(r=>r.kaynak==='manuel'), manEgt=EGT.filter(r=>r.kaynak==='manuel');
+  let h='';
+  h+=grupHtml('✏️ Manuel Yetkinlikler',manPol.map(r=>({txt:`${r.personel} — ${r.makine_adi} (Sv${r.yetenek})`,sil:`silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}');setTimeout(openChanges,250)`})));
+  h+=grupHtml('✏️ Manuel Eğitimler',manEgt.map(r=>({txt:`${r.personel} — ${(r.konu||'').slice(0,45)} (${r.plan_tarih||''})`,sil:`silManuelEgt('${escAttr(r.uid)}');setTimeout(openChanges,250)`})));
+  h+=grupHtml('🎯 Hedefler',[...HEDEF.entries()].map(([k,v])=>{const r=POL_BY_KEY.get(k)||{};return{txt:`${r.personel||'?'} — ${r.makine_adi||k} → Hedef ${v}`,sil:`silHedefByKey('${escAttr(k)}')`};}));
+  h+=grupHtml('🧩 Polivalans Değerlendirmeleri',[...PDEGER.values()].map(d=>{const r=POL_BY_KEY.get(d.id)||{};return{txt:`${r.personel||'?'} — ${r.makine_adi||''} (sv.${d.hesaplanan_seviye||'?'}, ${d.deger_tarihi||''})`,sil:`silPolDegerById('${escAttr(d.id)}')`};}));
+  h+=grupHtml('🎓 Etkinlik Değerlendirmeleri',[...DEGER.values()].map(d=>{const e=EGT_BY_UID.get(d.uid)||{};return{txt:`${e.personel||''} — ${(e.konu||'').slice(0,40)} (${d.etkinlik_sonuc||''}, ${d.deger_tarihi||''})`,sil:`silDegerByUid('${escAttr(d.uid)}')`};}));
+  h+=grupHtml('📅 Eğitim Planları',[...PLAN.values()].map(p=>({txt:`${p.personel||''} — ${(p.konu||'').slice(0,40)} (${p.plan_tarih||''})`,sil:`silPlanById('${escAttr(p.id)}');setTimeout(openChanges,250)`})));
+  document.getElementById('changesBody').innerHTML=h||'<div class="muted" style="padding:20px;text-align:center;">Henüz bir değişiklik/giriş yapmadınız.</div>';
+  document.getElementById('changesModal').classList.add('show');
+}
+function closeChanges(){document.getElementById('changesModal').classList.remove('show');updateChgCount();}
+async function silHedefByKey(key){HEDEF.delete(key);renderPol();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_hedef?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silPolDegerById(id){PDEGER.delete(id);renderPol();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silDegerByUid(uid){DEGER.delete(uid);renderEgt();renderDash();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silTumDegisiklik(){
+  if(!confirm('TÜM kendi değişiklikleriniz (manuel kayıtlar, hedefler, değerlendirmeler, planlar) silinecek. Emin misiniz?'))return;
+  const manPolIds=POL.filter(r=>r.kaynak==='manuel').map(r=>r.pol_inckey);
+  const manEgtIds=EGT.filter(r=>r.kaynak==='manuel').map(r=>r.uid);
+  POL=POL.filter(r=>r.kaynak!=='manuel'); EGT=EGT.filter(r=>r.kaynak!=='manuel');
+  HEDEF.clear(); PDEGER.clear(); DEGER.clear(); PLAN.clear();
+  POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
+  closeChanges(); renderPol(); renderEgt(); renderDash();
+  const H={apikey:ANON,Authorization:'Bearer '+ANON};
+  try{
+    for(const id of manPolIds) await fetch(`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${id}`,{method:'DELETE',headers:H});
+    for(const uid of manEgtIds) await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_hedef?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_plan?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    toast('🗑 Tüm değişiklikleriniz silindi','#64748b',2200);
+  }catch(e){toast('Bazıları silinemedi: '+e.message,'#dc2626',4000);}
+}
+
 // ===================== EGITIM =====================
 function _planli(s){return s==='Etkili Değil'||s==='Kısmen Etkili';}
 function planAsEgt(p){
@@ -1525,6 +1590,7 @@ document.getElementById('polModal').addEventListener('click',e=>{if(e.target.id=
 document.getElementById('planModal').addEventListener('click',e=>{if(e.target.id==='planModal')closePlan();});
 document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id==='mPolModal')closeMPol();});
 document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
+document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
 loadAll(true);
 </script>
 </body>
