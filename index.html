@@ -290,8 +290,10 @@
     <div class="card" style="margin-bottom:16px;">
       <div class="filters">
         <b style="color:#334155;">👤 Personel:</b>
-        <input list="persDatalist" id="persSec" placeholder="Personel ara/seç..." oninput="renderPersonelKart()" style="min-width:280px;">
+        <input list="persDatalist" id="persSec" placeholder="Personel ara/seç..." oninput="renderPersonelKart()" style="min-width:240px;">
         <datalist id="persDatalist"></datalist>
+        <select id="persLokF" onchange="buildPersDatalist();renderPersonelKart()"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="persYilF" onchange="renderPersonelKart()"><option value="">Tüm Yıllar (eğitim)</option></select>
         <span class="muted" id="persInfo"></span>
       </div>
     </div>
@@ -306,8 +308,10 @@
           <option value="egitim">📚 Eğitim Konusu</option>
           <option value="makine">🏭 Makine / Proses</option>
         </select>
-        <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="renderKonuKart()" style="min-width:320px;">
+        <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="renderKonuKart()" style="min-width:260px;">
         <datalist id="konuDatalist"></datalist>
+        <select id="konuLokF" onchange="renderKonuKart()"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="konuYilF" onchange="renderKonuKart()"><option value="">Tüm Yıllar</option></select>
         <span class="muted" id="konuInfo"></span>
       </div>
     </div>
@@ -565,6 +569,10 @@ function buildFilters(){
   document.getElementById('mLokList').innerHTML=opts(allLoks);
   document.getElementById('pdLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
   document.getElementById('pdDept').innerHTML='<option value="">Tüm Departmanlar</option>'+opts(depts);
+  document.getElementById('persLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
+  document.getElementById('persYilF').innerHTML='<option value="">Tüm Yıllar (eğitim)</option>'+opts(yils);
+  document.getElementById('konuLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(allLoks);
+  document.getElementById('konuYilF').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
 }
 
 // ===================== POLİVALANS PANELİ =====================
@@ -688,17 +696,21 @@ function showTab(t){
 
 // ===================== PERSONEL KARTI =====================
 function buildPersDatalist(){
-  const pers=[...new Set(POL.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const lf=document.getElementById('persLokF').value;
+  const src=lf?POL.filter(r=>r.lokasyon===lf):POL;
+  const pers=[...new Set(src.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
   document.getElementById('persDatalist').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
 }
 function renderPersonelKart(){
   const ad=document.getElementById('persSec').value.trim();
+  const yf=document.getElementById('persYilF').value;
   const det=document.getElementById('persDetay');
   if(!ad){det.innerHTML='<div class="card muted">Yetkinlik ve eğitim geçmişini görmek için bir personel seçin.</div>';document.getElementById('persInfo').textContent='';return;}
   const pol=POL.filter(r=>r.personel===ad);
   if(!pol.length){det.innerHTML='<div class="card muted">Bu isimde polivalans kaydı yok.</div>';return;}
   const guid=pol[0].personel_guid; const info=pol[0];
-  const egt=EGT.filter(r=>(guid&&r.personel_guid===guid)||r.personel===ad);
+  let egt=EGT.filter(r=>(guid&&r.personel_guid===guid)||r.personel===ad);
+  if(yf)egt=egt.filter(r=>r.yil===yf);
   const egtGer=egt.filter(r=>r.gerceklesme);
   document.getElementById('persInfo').textContent=`${pol.length} yetkinlik · ${egtGer.length} eğitim`;
   // yetkinlik seviye dağılımı
@@ -765,14 +777,15 @@ function renderKonuKart(){
   else renderKonuMakine(sel,det);
 }
 function renderKonuEgitim(konu,det){
-  const kayitlar=EGT.filter(r=>r.konu===konu);
+  const lf=document.getElementById('konuLokF').value, yf=document.getElementById('konuYilF').value;
+  const kayitlar=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
   const ger=kayitlar.filter(r=>r.gerceklesme);
   const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
   const notlar=ger.map(r=>r.not_sonra).filter(v=>v!=null&&v!=='');
   const ortNot=notlar.length?(notlar.reduce((s,v)=>s+(+v||0),0)/notlar.length):0;
   const adamSaat=ger.reduce((s,r)=>s+(+r.sure||0),0);
-  // o eğitimi almayan personel (tüm polivalans personeli - alanlar)
-  const persMap=new Map(); POL.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
+  // o eğitimi almayan personel (lokasyon filtreli polivalans personeli - alanlar)
+  const persMap=new Map(); POL.filter(r=>!lf||r.lokasyon===lf).forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
   const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>v);
   document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
   const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
@@ -796,7 +809,8 @@ function renderKonuEgitim(konu,det){
     </div>`;
 }
 function renderKonuMakine(makine,det){
-  const kayitlar=POL.filter(r=>r.makine_adi===makine);
+  const lf=document.getElementById('konuLokF').value;
+  const kayitlar=POL.filter(r=>r.makine_adi===makine&&(!lf||r.lokasyon===lf));
   const yetC=[0,0,0,0]; kayitlar.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
   document.getElementById('konuInfo').textContent=`${kayitlar.length} yetkin personel`;
   const rows=[...kayitlar].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.personel).localeCompare(String(b.personel),'tr')).map(r=>{
@@ -1366,6 +1380,7 @@ function renderEgt(){
         dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;
       }
     }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+    if(d&&d.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(d.deger_tarihi)}</span>`;
     const manRozE=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelEgt('${esc(r.uid)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
     return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
     <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b>${manRozE}</td><td class="muted">${esc(r.turu)}</td>
