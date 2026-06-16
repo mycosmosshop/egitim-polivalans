@@ -117,6 +117,8 @@
       <div class="stat"><div class="v" id="polTotal">—</div><div class="l">Yetkinlik Kaydı</div></div>
       <div class="stat"><div class="v" id="polPers">—</div><div class="l">Personel</div></div>
       <div class="stat"><div class="v" id="polMak">—</div><div class="l">Makine/Proses</div></div>
+      <div class="stat blue"><div class="v" id="polHedefli">—</div><div class="l">Hedef Tanımlı</div></div>
+      <div class="stat alt"><div class="v" id="polGap">—</div><div class="l">Eğitim Gereken</div></div>
     </div>
     <div class="card">
       <div class="filters">
@@ -127,6 +129,12 @@
           <option value="">Tüm Yetenekler</option>
           <option value="1">1 - Başlangıç</option><option value="2">2 - Gelişmekte</option>
           <option value="3">3 - Yetkin</option><option value="4">4 - Uzman/Eğitebilir</option>
+        </select>
+        <select id="polDurum" onchange="renderPol()">
+          <option value="">Tüm Durumlar</option>
+          <option value="gap">⚠ Eğitim Gereken</option>
+          <option value="ok">✓ Hedef Karşılanan</option>
+          <option value="nohedef">Hedefsiz</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <div class="legend">
@@ -145,8 +153,10 @@
             <th onclick="sortPol('makinegrup_adi')">Proses Grubu</th>
             <th onclick="sortPol('makine_adi')">Makine / Konu</th>
             <th onclick="sortPol('makine_kodu')">Kod</th>
-            <th onclick="sortPol('yetenek')">Yetenek</th>
-            <th onclick="sortPol('tarih')">Tarih</th>
+            <th onclick="sortPol('yetenek')">Mevcut</th>
+            <th>Hedef</th>
+            <th>Durum</th>
+            <th>Gerekli Eğitim / Değerlendirme</th>
           </tr></thead>
           <tbody id="polBody"></tbody>
         </table>
@@ -198,8 +208,9 @@
 <script>
 const SUPA='https://nnubrxbpthmkitueixbh.supabase.co';
 const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWJyeGJwdGhta2l0dWVpeGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI2MDIsImV4cCI6MjA5NjEzODYwMn0.CHZUOylf_q8kkOQbFf9VWZ6-doUTlynmAhahM2EuImE';
-let POL=[], EGT=[];
+let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4)
 let polSort={k:'personel',dir:1}, egtSort={k:'yil',dir:-1};
+const SEVIYE={0:'Yetkinlik yok',1:'Başlangıç',2:'Gelişmekte',3:'Yetkin',4:'Uzman'};
 let charts={};
 const AYLAR=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
 const PALETTE=['#1e7e4a','#2563eb','#d97706','#9333ea','#0891b2','#dc2626','#65a30d','#db2777','#475569','#ca8a04'];
@@ -222,7 +233,13 @@ async function fetchAll(table,select){
 async function loadAll(notify){
   try{
     if(notify)toast('Veriler yükleniyor...','#3b82f6',2000);
-    [POL,EGT]=await Promise.all([fetchAll('egt_polivalans','*'),fetchAll('egt_egitim','*')]);
+    let hedefRows=[];
+    [POL,EGT,hedefRows]=await Promise.all([
+      fetchAll('egt_polivalans','*'),
+      fetchAll('egt_egitim','*'),
+      fetchAll('egt_hedef','id,hedef').catch(()=>[])   // tablo yoksa sessizce boş
+    ]);
+    HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
     buildFilters(); renderDash(); renderPol(); renderEgt();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
   }catch(e){
@@ -366,15 +383,31 @@ function drawGrouped(id,labels,datasets,horizontal){
 }
 
 // ===================== POLIVALANS =====================
+function hedefKey(r){return (r.personel_guid||'')+'|'+(r.makine_kodu||'');}
+function egitimOneri(mevcut,hedef){
+  const gap=hedef-mevcut; if(gap<=0)return '';
+  let o=`${SEVIYE[mevcut]} → ${SEVIYE[hedef]}: `;
+  if(hedef===4) o+='İleri uygulamalı eğitim + eğitici/mentor programı, ardından yetkinlik değerlendirme sınavı.';
+  else if(gap>=2) o+='Yoğun işbaşı eğitimi + mentorluk, ara değerlendirme ile kademeli geçiş.';
+  else o+='İşbaşı eğitimi + uygulamalı pratik, sonrasında yetkinlik değerlendirmesi.';
+  return o;
+}
 function polFiltered(){
   const q=document.getElementById('polSearch').value.toLowerCase().trim();
   const dept=document.getElementById('polDept').value;
   const lok=document.getElementById('polLok').value;
   const yet=document.getElementById('polYet').value;
+  const durum=document.getElementById('polDurum').value;
   return POL.filter(r=>{
     if(dept&&r.departman!==dept)return false;
     if(lok&&r.lokasyon!==lok)return false;
     if(yet&&String(r.yetenek)!==yet)return false;
+    if(durum){
+      const h=HEDEF.get(hedefKey(r)); const mevcut=+r.yetenek||0;
+      if(durum==='nohedef'&&h)return false;
+      if(durum==='gap'&&!(h&&mevcut<h))return false;
+      if(durum==='ok'&&!(h&&mevcut>=h))return false;
+    }
     if(q){const s=(r.personel+' '+r.makine_adi+' '+r.makine_kodu+' '+r.makinegrup_adi+' '+r.proses).toLowerCase();if(!s.includes(q))return false;}
     return true;
   });
@@ -386,12 +419,44 @@ function renderPol(){
   document.getElementById('polTotal').textContent=rows.length;
   document.getElementById('polPers').textContent=new Set(rows.map(r=>r.personel)).size;
   document.getElementById('polMak').textContent=new Set(rows.map(r=>r.makine_kodu)).size;
-  const cap=rows.slice(0,3000);
-  document.getElementById('polBody').innerHTML=cap.map(r=>`<tr>
-    <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
-    <td class="muted">${esc(r.makinegrup_adi)}</td><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makine_kodu)}</td>
-    <td><span class="yet yet${r.yetenek}">${esc(r.yetenek)}</span></td><td class="muted">${esc(r.tarih||'')}</td></tr>`).join('')
-    +(rows.length>3000?`<tr><td colspan="8" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+  let hedefli=0,gapli=0;
+  rows.forEach(r=>{const h=HEDEF.get(hedefKey(r));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  document.getElementById('polHedefli').textContent=hedefli.toLocaleString('tr');
+  document.getElementById('polGap').textContent=gapli.toLocaleString('tr');
+  const cap=rows.slice(0,2000);
+  document.getElementById('polBody').innerHTML=cap.map(r=>{
+    const key=hedefKey(r); const mevcut=+r.yetenek||0; const h=HEDEF.get(key)||'';
+    const gap=h?h-mevcut:0;
+    const durum = !h ? '<span class="muted">—</span>'
+      : gap<=0 ? '<span class="badge b-ok">✓ Yeterli</span>'
+      : `<span class="badge b-no">⚠ ${gap} seviye eksik</span>`;
+    const oneri = gap>0 ? `<span style="font-size:.92em;color:#b45309;">${esc(egitimOneri(mevcut,h))}</span>` : (h?'<span class="muted">—</span>':'');
+    const sel=`<select onchange="saveHedef('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.value)" style="padding:3px 5px;border-radius:6px;border:1px solid #cbd5e1;font-weight:600;">
+      <option value="">—</option>${[1,2,3,4].map(n=>`<option value="${n}" ${h==n?'selected':''}>${n}</option>`).join('')}</select>`;
+    return `<tr>
+      <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
+      <td class="muted">${esc(r.makinegrup_adi)}</td><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makine_kodu)}</td>
+      <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
+      <td>${sel}</td><td>${durum}</td><td>${oneri}</td></tr>`;
+  }).join('')
+    +(rows.length>2000?`<tr><td colspan="10" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
+}
+function escAttr(s){return (s==null?'':String(s)).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+async function saveHedef(guid,mk,val){
+  const key=guid+'|'+mk; const h=val?+val:null;
+  if(h)HEDEF.set(key,h); else HEDEF.delete(key);
+  renderPol();
+  try{
+    if(h){
+      await fetch(`${SUPA}/rest/v1/egt_hedef?on_conflict=id`,{method:'POST',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify([{id:key,personel_guid:guid,makine_kodu:mk,hedef:h}])});
+    }else{
+      await fetch(`${SUPA}/rest/v1/egt_hedef?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast('🎯 Hedef kaydedildi','#16a34a',1500);
+  }catch(e){toast('❌ Hedef kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
 }
 
 // ===================== EGITIM =====================
@@ -446,7 +511,7 @@ async function refreshFromLeanSys(){
 // ===================== Excel =====================
 function exportXlsx(which){
   let rows,name;
-  if(which==='pol'){rows=polFiltered().map(r=>({Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Yetenek:r.yetenek,Tarih:r.tarih}));name='polivalans';}
+  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):''};});name='polivalans';}
   else if(which==='egt'){rows=egtFiltered().map(r=>({Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra}));name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
