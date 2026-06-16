@@ -295,10 +295,14 @@
           <option value="">— Seçiniz —</option>
           <option>Etkili</option><option>Kısmen Etkili</option><option>Etkili Değil</option>
         </select></div>
-      <div id="tekrarBox" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:12px 14px;margin-bottom:14px;">
-        <div style="font-weight:700;color:#991b1b;margin-bottom:8px;">⚠ Etkinlik yetersiz — Tekrar Eğitim Planlanmalı</div>
-        <div class="fgroup" style="margin-bottom:0;"><label>Tekrar Eğitim Tarihi (plana eklenir)</label>
-          <input type="date" id="dTekrarTarih"></div>
+      <div id="tekrarBox" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-weight:700;color:#1e40af;margin-bottom:4px;">🎓 Yeni Eğitim Planla <span class="muted" style="font-weight:400;">(opsiyonel — tarih girilirse eğitim planına eklenir)</span></div>
+        <div class="fgroup"><label>Eğitim Konusu</label><input type="text" id="dTekrarKonu" placeholder="Tekrar/gelişim eğitimi konusu"></div>
+        <div class="frow" style="grid-template-columns:1fr 1fr;">
+          <div class="fgroup" style="margin-bottom:0;"><label>Planlanan Tarih</label><input type="date" id="dTekrarTarih"></div>
+          <div class="fgroup" style="margin-bottom:0;"><label>Eğitim Türü</label>
+            <select id="dTekrarTur"><option>İşbaşı Eğitim</option><option>Sınıf Eğitimi</option><option>Mentorluk/Koçluk</option><option>Dış Eğitim</option><option>Online Eğitim</option></select></div>
+        </div>
       </div>
       <div class="frow" style="grid-template-columns:1fr 1fr;">
         <div class="fgroup"><label>Değerlendirme Tarihi</label><input type="date" id="dDegerTarih"></div>
@@ -824,6 +828,8 @@ function openDeger(uid){
   document.getElementById('dAciklama').value=d.etk_aciklama||'';
   document.getElementById('dSonuc').value=d.etkinlik_sonuc||'';
   document.getElementById('dTekrarTarih').value=d.tekrar_egitim_tarihi||'';
+  document.getElementById('dTekrarKonu').value=d.tekrar_konu||(r.konu||'');
+  document.getElementById('dTekrarTur').value=d.tekrar_tur||'İşbaşı Eğitim';
   document.getElementById('dDegerTarih').value=d.deger_tarihi||(DEGER.has(uid)?'':bugun());
   document.getElementById('dDegerlendiren').value=d.degerlendiren||'';
   document.getElementById('dSilBtn').style.display=DEGER.has(uid)?'inline-flex':'none';
@@ -840,7 +846,8 @@ function sonucOnerisi(){
   if(!sel.value){ sel.value=s; degerSonucToggle(); }
 }
 function degerSonucToggle(){
-  document.getElementById('tekrarBox').style.display=document.getElementById('dSonuc').value==='Etkili Değil'?'block':'none';
+  const s=document.getElementById('dSonuc').value;
+  document.getElementById('tekrarBox').style.display=(s==='Etkili Değil'||s==='Kısmen Etkili')?'block':'none';
 }
 function closeDeger(){document.getElementById('degerModal').classList.remove('show');_modalUid=null;}
 async function kaydetDeger(){
@@ -853,7 +860,9 @@ async function kaydetDeger(){
     etk_performans:document.getElementById('dPerformans').value||null,
     etk_aciklama:document.getElementById('dAciklama').value.trim()||null,
     etkinlik_sonuc:sonuc,
-    tekrar_egitim_tarihi:(sonuc==='Etkili Değil'?(document.getElementById('dTekrarTarih').value||null):null),
+    tekrar_egitim_tarihi:(_planli(sonuc)?(document.getElementById('dTekrarTarih').value||null):null),
+    tekrar_konu:(_planli(sonuc)?(document.getElementById('dTekrarKonu').value.trim()||null):null),
+    tekrar_tur:(_planli(sonuc)?(document.getElementById('dTekrarTur').value||null):null),
     deger_tarihi:document.getElementById('dDegerTarih').value||null,
     degerlendiren:document.getElementById('dDegerlendiren').value.trim()||null
   };
@@ -1003,12 +1012,24 @@ async function silPlan(){
 }
 
 // ===================== EGITIM =====================
+function _planli(s){return s==='Etkili Değil'||s==='Kısmen Etkili';}
 function planAsEgt(p){
   return {uid:'plan_'+p.id, _plan:true, _planKey:p.id, yil:String(p.plan_tarih||'').slice(0,4),
     konu:p.konu, turu:p.tur||'Planlanan', lokasyon:p.lokasyon, plan_tarih:p.plan_tarih, kayit_tarih:null,
     sure:p.sure, personel:p.personel, personel_guid:p.personel_guid, makine_kodu:p.makine_kodu, egitici:p.egitici, gerceklesme:0};
 }
-function allEgt(){return EGT.concat([...PLAN.values()].map(planAsEgt));}
+// Etkinlik değerlendirmesinden opsiyonel planlanan tekrar/gelişim eğitimleri
+function degerAsEgt(d){
+  const e=EGT_BY_UID.get(d.uid)||{};
+  return {uid:'eup_'+d.uid, _plan:true, _degerUid:d.uid, yil:String(d.tekrar_egitim_tarihi||'').slice(0,4),
+    konu:d.tekrar_konu||e.konu, turu:d.tekrar_tur||'Tekrar/Gelişim Eğitimi', lokasyon:e.lokasyon, plan_tarih:d.tekrar_egitim_tarihi,
+    kayit_tarih:null, sure:e.sure, personel:e.personel, personel_guid:e.personel_guid, makine_kodu:'', egitici:e.egitici, gerceklesme:0};
+}
+function allEgt(){
+  const pol=[...PLAN.values()].map(planAsEgt);
+  const etk=[...DEGER.values()].filter(d=>d.tekrar_egitim_tarihi).map(degerAsEgt);
+  return EGT.concat(pol,etk);
+}
 function egtFiltered(){
   const q=document.getElementById('egtSearch').value.toLowerCase().trim();
   const yil=document.getElementById('egtYil').value;
@@ -1043,7 +1064,7 @@ function renderEgt(){
         <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">—</td><td>${r.sure!=null?esc(r.sure):''}</td>
         <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici||'')}</td>
         <td><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 Planlandı</span></td>
-        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td><button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button></td></tr>`;
+        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td><button class="btn-dgr" onclick="${r._degerUid?`openDeger('${esc(r._degerUid)}')`:`openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`}">Düzenle</button></td></tr>`;
     }
     const d=DEGER.get(r.uid);
     let dgrBtn;
