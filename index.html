@@ -77,22 +77,32 @@
       <span class="muted" id="dashInfo"></span>
     </div>
     <div class="stats">
-      <div class="stat blue"><div class="v" id="dAdamSaat">—</div><div class="l">Adam·Saat (gerçekleşen)</div></div>
-      <div class="stat"><div class="v" id="dKatilim">—</div><div class="l">Eğitim Katılımı</div></div>
+      <div class="stat blue"><div class="v" id="dAdamSaat">—</div><div class="l">Gerçekleşen Adam·Saat</div></div>
+      <div class="stat"><div class="v" id="dPlanSaat">—</div><div class="l">Planlanan Adam·Saat</div></div>
+      <div class="stat amber"><div class="v" id="dOran">—</div><div class="l">Gerçekleşme Oranı</div></div>
+      <div class="stat"><div class="v" id="dKisiSaat">—</div><div class="l">Kişi Başı Saat</div></div>
       <div class="stat"><div class="v" id="dKisi">—</div><div class="l">Eğitim Alan Kişi</div></div>
       <div class="stat alt"><div class="v" id="dAlmayan">—</div><div class="l">Eğitim Almayan</div></div>
-      <div class="stat amber"><div class="v" id="dOrtNot">—</div><div class="l">Ortalama Sınav Notu</div></div>
+      <div class="stat"><div class="v" id="dGelisim">—</div><div class="l">Sınav Gelişimi (Ø)</div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
-      <div class="chart-card"><h3>📅 Aylık Eğitim Adam·Saatleri (gerçekleşen)</h3><div class="chart-box"><canvas id="chAylik"></canvas></div></div>
-      <div class="chart-card"><h3>✅ Gerçekleşme Durumu</h3><div class="chart-box"><canvas id="chDurum"></canvas></div></div>
+      <div class="chart-card"><h3>📅 Aylık Adam·Saat — Planlanan vs Gerçekleşen</h3><div class="chart-box tall"><canvas id="chAylik"></canvas></div></div>
+      <div class="chart-card"><h3>✅ Gerçekleşme Durumu (katılım)</h3><div class="chart-box tall"><canvas id="chDurum"></canvas></div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
-      <div class="chart-card"><h3>📍 Lokasyon Bazlı Adam·Saat</h3><div class="chart-box"><canvas id="chLok"></canvas></div></div>
+      <div class="chart-card"><h3>🏢 Departman Bazlı Adam·Saat</h3><div class="chart-box"><canvas id="chDept"></canvas></div></div>
+      <div class="chart-card"><h3>📖 En Çok Eğitilen Konular (Adam·Saat)</h3><div class="chart-box"><canvas id="chKonu"></canvas></div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🏷️ Eğitim Türü Dağılımı</h3><div class="chart-box"><canvas id="chTur"></canvas></div></div>
+      <div class="chart-card"><h3>👨‍🏫 Eğiticiye Göre Adam·Saat</h3><div class="chart-box"><canvas id="chEgitici"></canvas></div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>📈 Yıllara Göre Adam·Saat (trend)</h3><div class="chart-box"><canvas id="chYil"></canvas></div></div>
+      <div class="chart-card"><h3>🎯 Sınav Öncesi → Sonrası (eğitim etkinliği)</h3><div class="chart-box"><canvas id="chSinav"></canvas></div></div>
     </div>
     <div class="grid3">
-      <div class="chart-card"><h3>📈 Yıllara Göre Adam·Saat</h3><div class="chart-box"><canvas id="chYil"></canvas></div></div>
+      <div class="chart-card"><h3>🧩 Polivalans Yetkinlik Dağılımı <span class="muted" style="font-weight:400;">(seçili lokasyon)</span></h3><div class="chart-box"><canvas id="chYet"></canvas></div></div>
       <div class="chart-card">
         <h3>🚫 Eğitim Almayanlar <span class="muted" style="font-weight:400;">(polivalans personeli, seçili filtre)</span></h3>
         <div style="max-height:300px;overflow:auto;"><table id="almayanTbl"><tbody id="almayanBody"></tbody></table></div>
@@ -244,57 +254,86 @@ function showTab(t){
 
 // ===================== DASHBOARD =====================
 function num(v){const n=+v;return isNaN(n)?0:n;}
+function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
 function renderDash(){
   const yil=document.getElementById('dashYil').value;
   const lok=document.getElementById('dashLok').value;
   let e=EGT.filter(r=>(!yil||r.yil===yil)&&(!lok||r.lokasyon===lok));
   const ger=e.filter(r=>r.gerceklesme);
-  const adamSaat=ger.reduce((s,r)=>s+num(r.sure),0);
-  const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
-  const notlar=ger.map(r=>r.not_sonra).filter(v=>v!=null&&v!=='');
-  const ortNot=notlar.length?(notlar.reduce((s,v)=>s+num(v),0)/notlar.length):0;
 
-  // Eğitim almayanlar: polivalans personeli (lokasyon filtreli) - eğitim alanlar
+  // --- Temel metrikler ---
+  const adamSaat=ger.reduce((s,r)=>s+num(r.sure),0);
+  const planSaat=e.reduce((s,r)=>s+num(r.sure),0);            // tüm planlanan (gerçekleşsin/leşmesin)
+  const oran=e.length?(ger.length/e.length*100):0;
+  const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
+  const kisiSaat=kisi.size?(adamSaat/kisi.size):0;
+  // Sınav gelişimi: sınav öncesi/sonrası ikisi de dolu kayıtlarda fark
+  const ciftNot=ger.filter(r=>r.not_once!=null&&r.not_once!==''&&r.not_sonra!=null&&r.not_sonra!=='');
+  const ortOnce=ciftNot.length?ciftNot.reduce((s,r)=>s+num(r.not_once),0)/ciftNot.length:0;
+  const ortSonra=ciftNot.length?ciftNot.reduce((s,r)=>s+num(r.not_sonra),0)/ciftNot.length:0;
+  const gelisim=ortSonra-ortOnce;
+
+  // --- Eğitim almayanlar: polivalans personeli (lokasyon filtreli) − eğitim alanlar ---
   let polP=POL.filter(r=>(!lok||r.lokasyon===lok));
   const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,lok:r.lokasyon,dept:r.departman});});
   const almayanlar=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>v);
 
   document.getElementById('dAdamSaat').textContent=Math.round(adamSaat).toLocaleString('tr');
-  document.getElementById('dKatilim').textContent=ger.length.toLocaleString('tr');
+  document.getElementById('dPlanSaat').textContent=Math.round(planSaat).toLocaleString('tr');
+  document.getElementById('dOran').textContent='%'+oran.toFixed(0);
+  document.getElementById('dKisiSaat').textContent=kisiSaat.toFixed(1);
   document.getElementById('dKisi').textContent=kisi.size.toLocaleString('tr');
   document.getElementById('dAlmayan').textContent=almayanlar.length.toLocaleString('tr');
-  document.getElementById('dOrtNot').textContent=ortNot?ortNot.toFixed(1):'—';
-  document.getElementById('dashInfo').textContent=`${persMap.size} personel · ${e.length} eğitim kaydı`;
+  document.getElementById('dGelisim').textContent=ciftNot.length?((gelisim>=0?'+':'')+gelisim.toFixed(1)):'—';
+  document.getElementById('dashInfo').textContent=`${persMap.size} personel · ${e.length} eğitim kaydı (${ger.length} gerçekleşen)`;
 
-  // Aylık adam-saat (gerçekleşen, kayit_tarih ayına göre)
-  const aylik=Array(12).fill(0);
-  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)aylik[m]+=num(r.sure);}});
-  drawBar('chAylik','Adam·Saat',AYLAR,aylik.map(v=>Math.round(v)),'#1e7e4a');
+  // --- Aylık: planlanan (plan_tarih) vs gerçekleşen (kayit_tarih) ---
+  const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
+  e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
+  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
+  drawGrouped('chAylik',AYLAR,[
+    {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
+    {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}]);
 
-  // Durum donut
-  const okc=ger.length, noc=e.length-ger.length;
-  drawDoughnut('chDurum',['Gerçekleşen','Gerçekleşmeyen'],[okc,noc],['#16a34a','#e11d48']);
+  // --- Gerçekleşme donut ---
+  drawDoughnut('chDurum',['Gerçekleşen','Gerçekleşmeyen'],[ger.length,e.length-ger.length],['#16a34a','#e11d48']);
 
-  // Lokasyon bazlı adam-saat
-  const lokMap={};
-  ger.forEach(r=>{const L=r.lokasyon||'(Belirsiz)';lokMap[L]=(lokMap[L]||0)+num(r.sure);});
-  const lokE=Object.entries(lokMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  drawBar('chLok','Adam·Saat',lokE.map(x=>x[0]),lokE.map(x=>Math.round(x[1])),'#2563eb',true);
+  // --- Departman bazlı adam-saat (lokasyon içi kırılım) ---
+  const deptMap={}; ger.forEach(r=>{const p=POL.find(x=>(x.personel_guid||x.personel)===(r.personel_guid||r.personel)); const D=(p&&p.departman)||'(Belirsiz)'; deptMap[D]=(deptMap[D]||0)+num(r.sure);});
+  const deptE=topN(deptMap,12);
+  drawBar('chDept','Adam·Saat',deptE.map(x=>x[0]),deptE.map(x=>Math.round(x[1])),'#0891b2',true);
 
-  // Eğitim türü
-  const turMap={};
-  e.forEach(r=>{const T=r.turu||'(Belirsiz)';turMap[T]=(turMap[T]||0)+1;});
-  const turE=Object.entries(turMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  // --- En çok eğitilen konular (adam-saat) ---
+  const konuMap={}; ger.forEach(r=>{const K=r.konu||'(Belirsiz)';konuMap[K]=(konuMap[K]||0)+num(r.sure);});
+  const konuE=topN(konuMap,10);
+  drawBar('chKonu','Adam·Saat',konuE.map(x=>x[0].length>32?x[0].slice(0,32)+'…':x[0]),konuE.map(x=>Math.round(x[1])),'#9333ea',true);
+
+  // --- Eğitim türü donut ---
+  const turMap={}; e.forEach(r=>{const T=r.turu||'(Belirsiz)';turMap[T]=(turMap[T]||0)+1;});
+  const turE=topN(turMap,8);
   drawDoughnut('chTur',turE.map(x=>x[0]),turE.map(x=>x[1]),PALETTE);
 
-  // Yıllara göre adam-saat (lokasyon filtreli, yıl filtresi yok)
-  let eY=EGT.filter(r=>(!lok||r.lokasyon===lok)&&r.gerceklesme);
-  const yilMap={};
-  eY.forEach(r=>{if(r.yil)yilMap[r.yil]=(yilMap[r.yil]||0)+num(r.sure);});
-  const yilE=Object.entries(yilMap).sort((a,b)=>a[0].localeCompare(b[0]));
-  drawBar('chYil','Adam·Saat',yilE.map(x=>x[0]),yilE.map(x=>Math.round(x[1])),'#d97706');
+  // --- Eğitici bazlı adam-saat ---
+  const egMap={}; ger.forEach(r=>{const G=r.egitici||'(Belirsiz)';egMap[G]=(egMap[G]||0)+num(r.sure);});
+  const egE=topN(egMap,10);
+  drawBar('chEgitici','Adam·Saat',egE.map(x=>x[0].length>28?x[0].slice(0,28)+'…':x[0]),egE.map(x=>Math.round(x[1])),'#d97706',true);
 
-  // Almayanlar listesi
+  // --- Yıllara göre trend (lokasyon filtreli, yıl filtresi YOK) ---
+  let eY=EGT.filter(r=>(!lok||r.lokasyon===lok)&&r.gerceklesme);
+  const yilMap={}; eY.forEach(r=>{if(r.yil)yilMap[r.yil]=(yilMap[r.yil]||0)+num(r.sure);});
+  const yilE=Object.entries(yilMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  drawBar('chYil','Adam·Saat',yilE.map(x=>x[0]),yilE.map(x=>Math.round(x[1])),'#2563eb');
+
+  // --- Sınav öncesi → sonrası ---
+  drawGrouped('chSinav',['Ortalama Not'],[
+    {label:'Sınav Öncesi',data:[+ortOnce.toFixed(1)],color:'#f59e0b'},
+    {label:'Sınav Sonrası',data:[+ortSonra.toFixed(1)],color:'#16a34a'}],true);
+
+  // --- Polivalans yetkinlik dağılımı (lokasyon filtreli) ---
+  const yetC=[0,0,0,0]; polP.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
+  drawDoughnut('chYet',['1 - Başlangıç','2 - Gelişmekte','3 - Yetkin','4 - Uzman'],yetC,['#ef4444','#f59e0b','#3b82f6','#16a34a']);
+
+  // --- Almayanlar listesi ---
   almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
   window._almayan=almayanlar;
   document.getElementById('almayanBody').innerHTML=almayanlar.slice(0,500).map(v=>
@@ -316,6 +355,14 @@ function drawDoughnut(id,labels,data,colors){
   charts[id]=new Chart(document.getElementById(id),{type:'doughnut',
     data:{labels,datasets:[{data,backgroundColor:colors}]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:14}}}}});
+}
+function drawGrouped(id,labels,datasets,horizontal){
+  destroyChart(id);
+  charts[id]=new Chart(document.getElementById(id),{type:'bar',
+    data:{labels,datasets:datasets.map(d=>({label:d.label,data:d.data,backgroundColor:d.color,borderRadius:5}))},
+    options:{indexAxis:horizontal?'y':'x',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{size:11},boxWidth:14}}},
+      scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}},beginAtZero:true}}}});
 }
 
 // ===================== POLIVALANS =====================
