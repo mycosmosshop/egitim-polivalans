@@ -214,6 +214,7 @@
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
+        <button class="btn" style="background:#0891b2;color:#fff;" onclick="topluOtoPolDeger()" title="Görünen, değerlendirilmemiş yetkinlikleri mevcut seviyeye göre bugün tarihli değerlendir">🎯 Otomatik Değerlendir</button>
         <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMPol()">✏️ Manuel Yetkinlik</button>
         <div class="legend">
           <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1·Başlangıç</span>
@@ -286,6 +287,7 @@
           <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
+        <button class="btn" style="background:#0891b2;color:#fff;" onclick="topluOtoDeger()" title="Görünen, gerçekleşmiş ve değerlendirilmemiş eğitimleri olumlu/bugün tarihli değerlendir">🎯 Otomatik Değerlendir</button>
         <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMEgt()">✏️ Manuel Eğitim</button>
       </div>
       <div class="table-wrap">
@@ -1475,6 +1477,32 @@ async function silTumDegisiklik(){
     await fetch(`${SUPA}/rest/v1/egt_plan?id=neq.__zzz__`,{method:'DELETE',headers:H});
     toast('🗑 Tüm değişiklikleriniz silindi','#64748b',2200);
   }catch(e){toast('Bazıları silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
+async function topluOtoDeger(){
+  const aday=egtFiltered().filter(r=>!r._plan&&r.gerceklesme&&!DEGER.has(r.uid));
+  if(!aday.length){toast('Değerlendirilecek (gerçekleşmiş, boş) eğitim yok','#d97706',2800);return;}
+  if(!confirm(`${aday.length} eğitim kaydı OLUMLU (Etkili) ve ${bugun()} tarihli olarak otomatik değerlendirilecek. Devam?`))return;
+  const rows=aday.map(r=>({uid:r.uid,etk_uygulama:'Evet',etk_hedef:'Evet',etk_performans:'Evet',
+    etkinlik_sonuc:'Etkili',deger_tarihi:bugun(),degerlendiren:'Otomatik'}));
+  rows.forEach(rec=>DEGER.set(rec.uid,rec)); renderEgt(); renderDash(); updateChgCount();
+  try{await _batchUpsert('egt_degerlendirme',rows,'uid');toast(`✅ ${rows.length} eğitim değerlendirildi (${bugun()})`,'#16a34a',2500);}
+  catch(e){toast('❌ '+e.message,'#dc2626',5000);}
+}
+async function topluOtoPolDeger(){
+  const aday=polFiltered().filter(r=>!PDEGER.has((r.personel_guid||'')+'|'+(r.makine_kodu||'')));
+  if(!aday.length){toast('Değerlendirilecek boş yetkinlik yok','#d97706',2800);return;}
+  if(!confirm(`${aday.length} yetkinlik kaydı MEVCUT seviyeye göre ${bugun()} tarihli olarak otomatik değerlendirilecek (checklist dolar). Devam?`))return;
+  const rows=aday.map(r=>{
+    const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const m=+r.yetenek||0;
+    const chk={}; for(let s=1;s<=4;s++)chk[s]=PKRITER[s].map(()=>s<=m);
+    return {id:key,personel_guid:r.personel_guid,makine_kodu:r.makine_kodu,checklist:chk,
+      hesaplanan_seviye:m,deger_tarihi:bugun(),degerlendiren:'Otomatik'};
+  });
+  rows.forEach(rec=>PDEGER.set(rec.id,rec)); renderPol(); updateChgCount();
+  try{await _batchUpsert('egt_polivalans_deger',rows,'id');toast(`✅ ${rows.length} yetkinlik değerlendirildi (${bugun()})`,'#16a34a',2500);}
+  catch(e){toast('❌ '+e.message,'#dc2626',5000);}
 }
 
 // ===================== EGITIM =====================
