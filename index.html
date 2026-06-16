@@ -161,6 +161,8 @@
           <option value="gap">⚠ Eğitim Gereken</option>
           <option value="ok">✓ Hedef Karşılanan</option>
           <option value="nohedef">Hedefsiz</option>
+          <option value="planli">🎓 Eğitim Planlı</option>
+          <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <div class="legend">
@@ -265,8 +267,10 @@
         <div class="fgroup" style="margin-bottom:0;"><label>Tekrar Eğitim Tarihi (plana eklenir)</label>
           <input type="date" id="dTekrarTarih"></div>
       </div>
-      <div class="fgroup"><label>Değerlendiren</label>
-        <input type="text" id="dDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
+      <div class="frow" style="grid-template-columns:1fr 1fr;">
+        <div class="fgroup"><label>Değerlendirme Tarihi</label><input type="date" id="dDegerTarih"></div>
+        <div class="fgroup"><label>Değerlendiren</label><input type="text" id="dDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn" style="background:#fee2e2;color:#991b1b;" id="dSilBtn" onclick="silDeger()">🗑 Sil</button>
@@ -288,12 +292,18 @@
       </div>
       <div id="polChecklist"></div>
       <div class="frow" style="grid-template-columns:1fr 1fr;margin-top:8px;">
-        <div class="fgroup"><label>Değerlendirme Tarihi</label><input type="date" id="pTarih"></div>
+        <div class="fgroup"><label>Son Değerlendirme Tarihi</label><input type="date" id="pTarih"></div>
         <div class="fgroup"><label>Değerlendiren</label><input type="text" id="pDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
       </div>
-      <div style="background:#eff6ff;border-radius:8px;padding:12px;text-align:center;font-size:.95em;">
+      <div style="background:#eff6ff;border-radius:8px;padding:12px;text-align:center;font-size:.95em;margin-bottom:14px;">
         Hesaplanan Yetkinlik: <b id="pHesap" style="font-size:1.3em;color:#1e7e4a;">—</b>
         <span class="muted" id="pHesapNot"></span>
+      </div>
+      <div id="polEgitimPlan" style="display:none;background:#eef6ff;border:1px solid #bfdbfe;border-radius:9px;padding:12px 14px;">
+        <div style="font-weight:700;color:#1e40af;margin-bottom:4px;">🎓 Gelişim Eğitimi Planla <span class="muted" id="polGapNot" style="font-weight:400;"></span></div>
+        <div class="muted" style="font-size:.82em;margin-bottom:10px;">Hedefe ulaşmak için eğitim. Tarih girilince eğitim planına eklenir.</div>
+        <div class="fgroup"><label>Eğitim Konusu</label><input type="text" id="pPlanKonu" placeholder="Yetkinlik eğitimi konusu"></div>
+        <div class="fgroup" style="margin-bottom:0;"><label>Planlanan Eğitim Tarihi</label><input type="date" id="pPlanTarih"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -541,10 +551,12 @@ function polFiltered(){
     if(lok&&r.lokasyon!==lok)return false;
     if(yet&&String(r.yetenek)!==yet)return false;
     if(durum){
-      const h=HEDEF.get(hedefKey(r)); const mevcut=+r.yetenek||0;
+      const key=hedefKey(r); const h=HEDEF.get(key); const mevcut=+r.yetenek||0; const pd=PDEGER.get(key);
       if(durum==='nohedef'&&h)return false;
       if(durum==='gap'&&!(h&&mevcut<h))return false;
       if(durum==='ok'&&!(h&&mevcut>=h))return false;
+      if(durum==='planli'&&!(pd&&pd.plan_egitim_tarihi))return false;
+      if(durum==='degerli'&&!(pd&&pd.deger_tarihi))return false;
     }
     if(q){const s=(r.personel+' '+r.makine_adi+' '+r.makine_kodu+' '+r.makinegrup_adi+' '+r.proses).toLowerCase();if(!s.includes(q))return false;}
     return true;
@@ -572,9 +584,10 @@ function renderPol(){
     const sel=`<select onchange="saveHedef('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.value)" style="padding:3px 5px;border-radius:6px;border:1px solid #cbd5e1;font-weight:600;">
       <option value="">—</option>${[1,2,3,4].map(n=>`<option value="${n}" ${h==n?'selected':''}>${n}</option>`).join('')}</select>`;
     const pd=PDEGER.get(key);
+    const planEk = pd&&pd.plan_egitim_tarihi ? `<br><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 ${esc(pd.plan_egitim_tarihi)}</span>` : '';
     const sonDeger= pd&&pd.deger_tarihi
-      ? `<span class="badge b-ok" style="cursor:pointer;" title="Değerlendirmeyi aç">📋 ${esc(pd.deger_tarihi)}${pd.hesaplanan_seviye?' · sv.'+pd.hesaplanan_seviye:''}</span>`
-      : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>`;
+      ? `<span class="badge b-ok" style="cursor:pointer;" title="Değerlendirmeyi aç">📋 ${esc(pd.deger_tarihi)}${pd.hesaplanan_seviye?' · sv.'+pd.hesaplanan_seviye:''}</span>${planEk}`
+      : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
     const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
     return `<tr>
       <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
@@ -616,6 +629,7 @@ function openDeger(uid){
   document.getElementById('dAciklama').value=d.etk_aciklama||'';
   document.getElementById('dSonuc').value=d.etkinlik_sonuc||'';
   document.getElementById('dTekrarTarih').value=d.tekrar_egitim_tarihi||'';
+  document.getElementById('dDegerTarih').value=d.deger_tarihi||(DEGER.has(uid)?'':bugun());
   document.getElementById('dDegerlendiren').value=d.degerlendiren||'';
   document.getElementById('dSilBtn').style.display=DEGER.has(uid)?'inline-flex':'none';
   degerSonucToggle();
@@ -645,6 +659,7 @@ async function kaydetDeger(){
     etk_aciklama:document.getElementById('dAciklama').value.trim()||null,
     etkinlik_sonuc:sonuc,
     tekrar_egitim_tarihi:(sonuc==='Etkili Değil'?(document.getElementById('dTekrarTarih').value||null):null),
+    deger_tarihi:document.getElementById('dDegerTarih').value||null,
     degerlendiren:document.getElementById('dDegerlendiren').value.trim()||null
   };
   DEGER.set(_modalUid,rec);
@@ -693,6 +708,19 @@ function openPolDeger(guid,mk){
   document.getElementById('pTarih').value=(pd&&pd.deger_tarihi)||bugun();
   document.getElementById('pDegerlendiren').value=(pd&&pd.degerlendiren)||'';
   document.getElementById('pSilBtn').style.display=pd?'inline-flex':'none';
+  // Hedef belirlenmişse ve gap varsa → gelişim eğitimi planlama bölümü
+  const hedef=HEDEF.get(key)||0; const gap=hedef?hedef-mevcut:0;
+  const planBox=document.getElementById('polEgitimPlan');
+  if(gap>0){
+    planBox.style.display='block';
+    document.getElementById('polGapNot').textContent=`(Mevcut ${mevcut} → Hedef ${hedef}, ${gap} seviye eksik)`;
+    document.getElementById('pPlanKonu').value=(pd&&pd.plan_konu)||`${r.makine_adi||''} — Seviye ${hedef} yetkinlik eğitimi`;
+    document.getElementById('pPlanTarih').value=(pd&&pd.plan_egitim_tarihi)||'';
+  }else{
+    planBox.style.display='none';
+    document.getElementById('pPlanKonu').value=(pd&&pd.plan_konu)||'';
+    document.getElementById('pPlanTarih').value=(pd&&pd.plan_egitim_tarihi)||'';
+  }
   polHesapla();
   document.getElementById('polModal').classList.add('show');
 }
@@ -723,7 +751,9 @@ async function kaydetPolDeger(){
   const rec={id:_polModalKey,personel_guid:guid,makine_kodu:mk,
     checklist:polCollect(),hesaplanan_seviye:polHesapla(),
     deger_tarihi:document.getElementById('pTarih').value||null,
-    degerlendiren:document.getElementById('pDegerlendiren').value.trim()||null};
+    degerlendiren:document.getElementById('pDegerlendiren').value.trim()||null,
+    plan_konu:document.getElementById('pPlanKonu').value.trim()||null,
+    plan_egitim_tarihi:document.getElementById('pPlanTarih').value||null};
   PDEGER.set(_polModalKey,rec); closePolDeger(); renderPol();
   try{
     await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?on_conflict=id`,{method:'POST',
@@ -812,7 +842,7 @@ async function refreshFromLeanSys(){
 // ===================== Excel =====================
 function exportXlsx(which){
   let rows,name;
-  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||''};});name='polivalans';}
+  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||'','Planlanan Eğitim Konusu':pd.plan_konu||'','Planlanan Eğitim Tarihi':pd.plan_egitim_tarihi||''};});name='polivalans';}
   else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Sonucu':d.etkinlik_sonuc||'','Tekrar Eğitim Tarihi':d.tekrar_egitim_tarihi||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
