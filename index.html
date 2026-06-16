@@ -124,8 +124,8 @@
       <div class="chart-card"><h3>🎯 Sınav Öncesi → Sonrası (eğitim etkinliği)</h3><div class="chart-box"><canvas id="chSinav"></canvas></div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
-      <div class="chart-card"><h3>📋 Etkinlik Değerlendirme Sonuçları <span class="muted" id="degerInfo2" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chEtkinlik"></canvas></div></div>
-      <div class="chart-card"><h3>⭐ Eğitim Memnuniyet Puanı Dağılımı</h3><div class="chart-box"><canvas id="chPuan"></canvas></div></div>
+      <div class="chart-card"><h3>📋 Etkinlik Kriterleri <span class="muted" id="degerInfo2" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chEtkinlik"></canvas></div></div>
+      <div class="chart-card"><h3>📊 Etkinlik Sonucu <span class="muted" id="tekrarInfo" style="font-weight:400;"></span></h3><div class="chart-box"><canvas id="chPuan"></canvas></div></div>
     </div>
     <div class="grid3">
       <div class="chart-card"><h3>🧩 Polivalans Yetkinlik Dağılımı <span class="muted" style="font-weight:400;">(seçili lokasyon)</span></h3><div class="chart-box"><canvas id="chYet"></canvas></div></div>
@@ -210,6 +210,8 @@
           <option value="">Değerlendirme: Tümü</option>
           <option value="var">✓ Değerlendirilmiş</option>
           <option value="yok">Bekleyen</option>
+          <option value="etkisiz">⚠ Etkili Değil</option>
+          <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
       </div>
@@ -239,29 +241,30 @@
 <!-- Değerlendirme Modalı -->
 <div class="modal-bg" id="degerModal">
   <div class="modal">
-    <div class="modal-head"><h3>📋 Eğitim Değerlendirme</h3><button class="modal-x" onclick="closeDeger()">✕</button></div>
+    <div class="modal-head"><h3>🎯 Eğitim Etkinlik Değerlendirmesi</h3><button class="modal-x" onclick="closeDeger()">✕</button></div>
     <div class="modal-body">
       <div class="info" id="degerInfo"></div>
-      <div class="sec-title">Eğitim Değerlendirme (eğitim sonrası)</div>
-      <div class="fgroup">
-        <label>Eğitim Memnuniyet / Genel Puan</label>
-        <select id="dEgitimPuan">
-          <option value="">— Seçiniz —</option>
-          <option value="5">5 - Çok İyi</option><option value="4">4 - İyi</option>
-          <option value="3">3 - Orta</option><option value="2">2 - Zayıf</option><option value="1">1 - Yetersiz</option>
-        </select>
-      </div>
       <div class="sec-title">Etkinlik Değerlendirme (eğitim sonrası uygulama)</div>
       <div class="frow">
         <div class="fgroup"><label>İşinde uygulandı mı?</label>
-          <select id="dUygulama"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+          <select id="dUygulama" onchange="sonucOnerisi()"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
         <div class="fgroup"><label>Hedeflere ulaşıldı mı?</label>
-          <select id="dHedef"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+          <select id="dHedef" onchange="sonucOnerisi()"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
         <div class="fgroup"><label>Performans iyileşti mi?</label>
-          <select id="dPerformans"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
+          <select id="dPerformans" onchange="sonucOnerisi()"><option value="">—</option><option>Evet</option><option>Kısmen</option><option>Hayır</option></select></div>
       </div>
       <div class="fgroup"><label>Etkinlik Açıklaması / Gözlem</label>
         <textarea id="dAciklama" placeholder="Eğitimin işe yansıması, gözlemler..."></textarea></div>
+      <div class="fgroup"><label>Etkinlik Sonucu</label>
+        <select id="dSonuc" onchange="degerSonucToggle()">
+          <option value="">— Seçiniz —</option>
+          <option>Etkili</option><option>Kısmen Etkili</option><option>Etkili Değil</option>
+        </select></div>
+      <div id="tekrarBox" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:9px;padding:12px 14px;margin-bottom:14px;">
+        <div style="font-weight:700;color:#991b1b;margin-bottom:8px;">⚠ Etkinlik yetersiz — Tekrar Eğitim Planlanmalı</div>
+        <div class="fgroup" style="margin-bottom:0;"><label>Tekrar Eğitim Tarihi (plana eklenir)</label>
+          <input type="date" id="dTekrarTarih"></div>
+      </div>
       <div class="fgroup"><label>Değerlendiren</label>
         <input type="text" id="dDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
     </div>
@@ -473,9 +476,13 @@ function renderDash(){
     {label:'Hayır',data:[say('etk_uygulama','Hayır'),say('etk_hedef','Hayır'),say('etk_performans','Hayır')],color:'#e11d48'}]);
   document.getElementById('degerInfo2').textContent=dgr.length?`(${dgr.length} değerlendirme)`:'(henüz değerlendirme yok)';
 
-  // --- Eğitim memnuniyet puanı dağılımı ---
-  const puanC=[0,0,0,0,0]; dgr.forEach(d=>{const p=+d.egitim_puan;if(p>=1&&p<=5)puanC[p-1]++;});
-  drawBar('chPuan','Adet',['1','2','3','4','5'],puanC,'#9333ea');
+  // --- Etkinlik sonucu dağılımı + tekrar eğitim bekleyen ---
+  const sonucC={'Etkili':0,'Kısmen Etkili':0,'Etkili Değil':0};
+  dgr.forEach(d=>{if(d.etkinlik_sonuc&&sonucC[d.etkinlik_sonuc]!=null)sonucC[d.etkinlik_sonuc]++;});
+  const tekrar=dgr.filter(d=>d.etkinlik_sonuc==='Etkili Değil'&&d.tekrar_egitim_tarihi).length;
+  drawDoughnut('chPuan',['Etkili','Kısmen Etkili','Etkili Değil'],
+    [sonucC['Etkili'],sonucC['Kısmen Etkili'],sonucC['Etkili Değil']],['#16a34a','#f59e0b','#e11d48']);
+  document.getElementById('tekrarInfo').textContent=tekrar?`· ⚠ ${tekrar} tekrar eğitim planlı`:'';
 
   // --- Polivalans yetkinlik dağılımı (lokasyon filtreli) ---
   const yetC=[0,0,0,0]; polP.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
@@ -603,25 +610,41 @@ function openDeger(uid){
   const d=DEGER.get(uid)||{};
   document.getElementById('degerInfo').innerHTML=
     `<b>${esc(r.konu||'')}</b><br>👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 📅 ${esc(r.kayit_tarih||r.plan_tarih||'')} &nbsp;·&nbsp; ⏱ ${r.sure||'?'} saat<br>📍 ${esc(r.lokasyon||'')} &nbsp;·&nbsp; 👨‍🏫 ${esc(r.egitici||'')}`;
-  document.getElementById('dEgitimPuan').value=d.egitim_puan||'';
   document.getElementById('dUygulama').value=d.etk_uygulama||'';
   document.getElementById('dHedef').value=d.etk_hedef||'';
   document.getElementById('dPerformans').value=d.etk_performans||'';
   document.getElementById('dAciklama').value=d.etk_aciklama||'';
+  document.getElementById('dSonuc').value=d.etkinlik_sonuc||'';
+  document.getElementById('dTekrarTarih').value=d.tekrar_egitim_tarihi||'';
   document.getElementById('dDegerlendiren').value=d.degerlendiren||'';
   document.getElementById('dSilBtn').style.display=DEGER.has(uid)?'inline-flex':'none';
+  degerSonucToggle();
   document.getElementById('degerModal').classList.add('show');
+}
+// 3 sorudan otomatik etkinlik sonucu önerisi (kullanıcı henüz seçmediyse)
+function sonucOnerisi(){
+  const vals=[document.getElementById('dUygulama').value,document.getElementById('dHedef').value,document.getElementById('dPerformans').value];
+  if(vals.some(v=>!v))return;
+  const hayir=vals.filter(v=>v==='Hayır').length, evet=vals.filter(v=>v==='Evet').length;
+  let s; if(evet===3)s='Etkili'; else if(hayir>=2)s='Etkili Değil'; else s='Kısmen Etkili';
+  const sel=document.getElementById('dSonuc');
+  if(!sel.value){ sel.value=s; degerSonucToggle(); }
+}
+function degerSonucToggle(){
+  document.getElementById('tekrarBox').style.display=document.getElementById('dSonuc').value==='Etkili Değil'?'block':'none';
 }
 function closeDeger(){document.getElementById('degerModal').classList.remove('show');_modalUid=null;}
 async function kaydetDeger(){
   if(!_modalUid)return;
+  const sonuc=document.getElementById('dSonuc').value||null;
   const rec={
     uid:_modalUid,
-    egitim_puan:document.getElementById('dEgitimPuan').value?+document.getElementById('dEgitimPuan').value:null,
     etk_uygulama:document.getElementById('dUygulama').value||null,
     etk_hedef:document.getElementById('dHedef').value||null,
     etk_performans:document.getElementById('dPerformans').value||null,
     etk_aciklama:document.getElementById('dAciklama').value.trim()||null,
+    etkinlik_sonuc:sonuc,
+    tekrar_egitim_tarihi:(sonuc==='Etkili Değil'?(document.getElementById('dTekrarTarih').value||null):null),
     degerlendiren:document.getElementById('dDegerlendiren').value.trim()||null
   };
   DEGER.set(_modalUid,rec);
@@ -732,6 +755,8 @@ function egtFiltered(){
     if(dur!==''&&String(r.gerceklesme||0)!==dur)return false;
     if(dgr==='var'&&!DEGER.has(r.uid))return false;
     if(dgr==='yok'&&DEGER.has(r.uid))return false;
+    if(dgr==='etkisiz'&&(DEGER.get(r.uid)||{}).etkinlik_sonuc!=='Etkili Değil')return false;
+    if(dgr==='tekrar'&&!(DEGER.get(r.uid)||{}).tekrar_egitim_tarihi)return false;
     if(q){const s=((r.personel||'')+' '+(r.konu||'')+' '+(r.egitici||'')+' '+(r.turu||'')).toLowerCase();if(!s.includes(q))return false;}
     return true;
   });
@@ -746,9 +771,17 @@ function renderEgt(){
   const cap=rows.slice(0,3000);
   document.getElementById('egtBody').innerHTML=cap.map(r=>{
     const d=DEGER.get(r.uid);
-    const dgrBtn=d
-      ? `<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${d.egitim_puan?d.egitim_puan+'/5':'Görüntüle'}</button>`
-      : `<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+    let dgrBtn;
+    if(d){
+      const s=d.etkinlik_sonuc;
+      if(s==='Etkili Değil'){
+        dgrBtn=`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="openDeger('${esc(r.uid)}')">⚠ Etkili Değil${d.tekrar_egitim_tarihi?' → '+esc(d.tekrar_egitim_tarihi):''}</button>`;
+      }else if(s==='Kısmen Etkili'){
+        dgrBtn=`<button class="btn-dgr" style="background:#fef3c7;color:#92400e;" onclick="openDeger('${esc(r.uid)}')">◐ Kısmen</button>`;
+      }else{
+        dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;
+      }
+    }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
     return `<tr>
     <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
     <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
@@ -780,7 +813,7 @@ async function refreshFromLeanSys(){
 function exportXlsx(which){
   let rows,name;
   if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||''};});name='polivalans';}
-  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Eğitim Puanı':d.egitim_puan||'','Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
+  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Sonucu':d.etkinlik_sonuc||'','Tekrar Eğitim Tarihi':d.tekrar_egitim_tarihi||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
   XLSX.writeFile(wb,name+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
