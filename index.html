@@ -215,11 +215,18 @@
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMPol()">✏️ Manuel Yetkinlik</button>
         <div class="legend">
-          <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1</span>
-          <span><i class="yet yet2" style="width:16px;height:16px;line-height:16px;"></i>2</span>
-          <span><i class="yet yet3" style="width:16px;height:16px;line-height:16px;"></i>3</span>
-          <span><i class="yet yet4" style="width:16px;height:16px;line-height:16px;"></i>4</span>
+          <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1·Başlangıç</span>
+          <span><i class="yet yet2" style="width:16px;height:16px;line-height:16px;"></i>2·Gelişmekte</span>
+          <span><i class="yet yet3" style="width:16px;height:16px;line-height:16px;"></i>3·Yetkin</span>
+          <span><i class="yet yet4" style="width:16px;height:16px;line-height:16px;"></i>4·Uzman</span>
         </div>
+      </div>
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:.83em;color:#475569;line-height:1.6;">
+        <b style="color:#1e7e4a;">Yetkinlik Seviyeleri:</b>
+        <b style="color:#ef4444;">1 · Başlangıç</b> (temel bilgi, gözetim altında çalışır) &nbsp;|&nbsp;
+        <b style="color:#f59e0b;">2 · Gelişmekte</b> (kısmi gözetimle çalışır) &nbsp;|&nbsp;
+        <b style="color:#3b82f6;">3 · Yetkin</b> (bağımsız çalışır, sorun giderir) &nbsp;|&nbsp;
+        <b style="color:#16a34a;">4 · Uzman</b> (öğretebilir, süreç iyileştirir)
       </div>
       <div id="polBulkBar" style="display:none;background:#eef6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 14px;margin-bottom:10px;align-items:center;gap:10px;flex-wrap:wrap;">
         <b id="polSelCount" style="color:#1e40af;">0 seçili</b>
@@ -506,7 +513,9 @@ let _polModalKey=null;
 let PLAN=new Map();                     // PLAN: "guid|makine_kodu" -> planlanan eğitim
 let _planKey=null;
 let _polSel=new Set();                  // toplu seçim (polivalans key'leri)
-let _planBulk=false;                    // toplu eğitim planla modu
+let _planBulk=false;                    // toplu eğitim planla modu (polivalans)
+let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid)
+let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
 // Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
 const PKRITER={
   1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
@@ -824,13 +833,15 @@ function renderKonuEgitim(konu,det){
   const adamSaat=ger.reduce((s,r)=>s+(+r.sure||0),0);
   // o eğitimi almayan personel (lokasyon filtreli polivalans personeli - alanlar)
   const persMap=new Map(); POL.filter(r=>!lf||r.lokasyon===lf).forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
-  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>v);
+  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>({...v,guid:k}));
   document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
+  window._almData=almayan; window._almKonu=konu;
   const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
     <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td>
     <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td><td class="muted">${esc(r.egitici||'')}</td></tr>`).join('');
-  const almRows=almayan.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')).slice(0,300).map(v=>`<tr>
-    <td>${esc(v.ad)}</td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`).join('');
+  const almRows=almayan.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')).slice(0,500).map(v=>`<tr>
+    <td><input type="checkbox" class="almChk" onclick="toggleAlmSel('${esc(v.guid)}',this.checked)" ${_almSel.has(v.guid)?'checked':''}></td>
+    <td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`).join('');
   det.innerHTML=`
     <div class="stats">
       <div class="stat"><div class="v">${kayitlar.length}</div><div class="l">Toplam Kayıt</div></div>
@@ -843,8 +854,15 @@ function renderKonuEgitim(konu,det){
       <div class="chart-card"><h3>✅ Katılanlar <span class="muted" style="font-weight:400;">(${ger.length})</span></h3>
         <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Lokasyon</th><th>Tarih</th><th>Not</th><th>Eğitici</th></tr></thead><tbody>${alanRows||'<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="chart-card"><h3>🚫 Bu Eğitimi Almayanlar <span class="muted" style="font-weight:400;">(${almayan.length})</span></h3>
-        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody>${almRows||'<tr><td colspan="3" class="muted">Herkes almış 🎉</td></tr>'}</tbody></table></div></div>
+        <div class="filters" style="margin-bottom:8px;">
+          <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="openAlmPlan()">🎓 Seçilenlere Eğitim Planla</button>
+          <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="almSelAll()">Tümünü Seç</button>
+          <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="_almSel.clear();renderKonuKart()">Seçimi Bırak</button>
+          <span class="muted" id="almSelInfo"></span>
+        </div>
+        <div class="table-wrap" style="max-height:400px;"><table><thead><tr><th style="width:30px;"></th><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody>${almRows||'<tr><td colspan="4" class="muted">Herkes almış 🎉</td></tr>'}</tbody></table></div></div>
     </div>`;
+  document.getElementById('almSelInfo').textContent=_almSel.size?`${_almSel.size} seçili`:'';
 }
 function renderKonuMakine(makine,det){
   const lf=document.getElementById('konuLokF').value;
@@ -1107,11 +1125,12 @@ function openDeger(uid){
   const d=DEGER.get(uid)||{};
   document.getElementById('degerInfo').innerHTML=
     `<b>${esc(r.konu||'')}</b><br>👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 📅 ${esc(r.kayit_tarih||r.plan_tarih||'')} &nbsp;·&nbsp; ⏱ ${r.sure||'?'} saat<br>📍 ${esc(r.lokasyon||'')} &nbsp;·&nbsp; 👨‍🏫 ${esc(r.egitici||'')}`;
-  document.getElementById('dUygulama').value=d.etk_uygulama||'';
-  document.getElementById('dHedef').value=d.etk_hedef||'';
-  document.getElementById('dPerformans').value=d.etk_performans||'';
+  const yeni=!DEGER.has(uid);  // yeni kayıtta olumlu varsayılan
+  document.getElementById('dUygulama').value=d.etk_uygulama||(yeni?'Evet':'');
+  document.getElementById('dHedef').value=d.etk_hedef||(yeni?'Evet':'');
+  document.getElementById('dPerformans').value=d.etk_performans||(yeni?'Evet':'');
   document.getElementById('dAciklama').value=d.etk_aciklama||'';
-  document.getElementById('dSonuc').value=d.etkinlik_sonuc||'';
+  document.getElementById('dSonuc').value=d.etkinlik_sonuc||(yeni?'Etkili':'');
   document.getElementById('dTekrarTarih').value=d.tekrar_egitim_tarihi||'';
   document.getElementById('dTekrarKonu').value=d.tekrar_konu||(r.konu||'');
   document.getElementById('dTekrarTur').value=d.tekrar_tur||'İşbaşı Eğitim';
@@ -1265,7 +1284,7 @@ function openEgitimPlan(guid,mk){
   document.getElementById('plSilBtn').style.display=pl?'inline-flex':'none';
   document.getElementById('planModal').classList.add('show');
 }
-function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;}
+function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;_planAlmayan=false;}
 async function kaydetPlan(){
   const tarih=document.getElementById('plTarih').value;
   if(!tarih){toast('⚠ Planlanan tarih gerekli','#d97706',2500);return;}
@@ -1275,6 +1294,17 @@ async function kaydetPlan(){
     aciklama:document.getElementById('plAciklama').value.trim()||null,durum:'Planlandı',
     olusturan:document.getElementById('plOlusturan').value.trim()||null};
   const konuInput=document.getElementById('plKonu').value.trim();
+  if(_planAlmayan){
+    const persler=(window._almData||[]).filter(p=>_almSel.has(p.guid));
+    const konu=konuInput||window._almKonu||'';
+    const rows=persler.map(p=>({id:'alm_'+slug(p.guid)+'_'+slug(konu).slice(0,40),
+      personel_guid:p.guid,personel:p.ad,makine_kodu:null,makine_adi:null,lokasyon:p.lok||null,departman:p.dept||null,
+      hedef_seviye:null,konu:konu,...ortak}));
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); _almSel.clear(); closePlan(); renderEgt(); renderDash(); renderKonuKart();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} personele eğitim planlandı`,'#16a34a',2200);}
+    catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+    return;
+  }
   if(_planBulk){
     const keys=[..._polSel]; const rows=keys.map(key=>{
       const r=POL_BY_KEY.get(key)||{}; const [guid,mk]=key.split('|');
@@ -1360,6 +1390,28 @@ function topluEgitimAc(){
   document.getElementById('planModal').classList.add('show');
 }
 
+// ===================== Eğitim Almayanlara Toplu Planlama =====================
+function toggleAlmSel(guid,on){if(on)_almSel.add(guid);else _almSel.delete(guid);
+  const i=document.getElementById('almSelInfo');if(i)i.textContent=_almSel.size?`${_almSel.size} seçili`:'';}
+function almSelAll(){(window._almData||[]).forEach(p=>_almSel.add(p.guid));renderKonuKart();}
+function openAlmPlan(){
+  if(!_almSel.size){toast('⚠ Önce personel seçin','#d97706',2200);return;}
+  _planAlmayan=true; _planBulk=false; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Toplu Eğitim Planı</b><br><span class="muted">"${esc(window._almKonu||'')}" eğitimini almayan ${_almSel.size} personele planlanacak.</span>`;
+  document.getElementById('plKonu').value=window._almKonu||'';
+  document.getElementById('plTarih').value='';document.getElementById('plTur').value='İç Eğitim';
+  document.getElementById('plEgitici').value='';document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
+}
+async function silPlanById(id){
+  if(!id||!confirm('Bu planlanan eğitim silinsin mi?'))return;
+  PLAN.delete(id); renderPol&&renderPol(); renderEgt(); renderDash();
+  try{await fetch(`${SUPA}/rest/v1/egt_plan?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Plan silindi','#64748b',1500);}
+  catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
 // ===================== EGITIM =====================
 function _planli(s){return s==='Etkili Değil'||s==='Kısmen Etkili';}
 function planAsEgt(p){
@@ -1413,7 +1465,7 @@ function renderEgt(){
         <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">—</td><td>${r.sure!=null?esc(r.sure):''}</td>
         <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici||'')}</td>
         <td><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 Planlandı</span></td>
-        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td><button class="btn-dgr" onclick="${r._degerUid?`openDeger('${esc(r._degerUid)}')`:`openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`}">Düzenle</button></td></tr>`;
+        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td>${r._degerUid?`<button class="btn-dgr" onclick="openDeger('${esc(r._degerUid)}')">Düzenle</button>`:(r.makine_kodu?`<button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button>`:`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="silPlanById('${esc(r._planKey)}')">🗑 Sil</button>`)}</td></tr>`;
     }
     const d=DEGER.get(r.uid);
     let dgrBtn;
