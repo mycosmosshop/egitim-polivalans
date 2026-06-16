@@ -217,6 +217,7 @@
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <button class="btn" style="background:#0891b2;color:#fff;" onclick="topluOtoPolDeger()" title="Görünen, değerlendirilmemiş yetkinlikleri mevcut seviyeye göre bugün tarihli değerlendir">🎯 Otomatik Değerlendir</button>
+        <button class="btn" style="background:#1e40af;color:#fff;" onclick="topluHedefEgitimAc()" title="Hedefi yükseltilecek (mevcut<hedef) yetkinliklere eğitim planla — seçim varsa seçilenlere, yoksa tümüne">🎓 Hedef Eğitimlerini Planla</button>
         <button class="btn" style="background:#7c3aed;color:#fff;" onclick="openMPol()">✏️ Manuel Yetkinlik</button>
         <div class="legend">
           <span><i class="yet yet1" style="width:16px;height:16px;line-height:16px;"></i>1·Başlangıç</span>
@@ -554,6 +555,7 @@ let _planBulk=false;                    // toplu eğitim planla modu (polivalans
 let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid)
 let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
 let AYAR={};                            // KPI hedefleri vb. (egt_ayar)
+let _planHedefAuto=false;               // hedef gap'lerine toplu eğitim planla modu
 // Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
 const PKRITER={
   1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
@@ -1338,7 +1340,7 @@ function openEgitimPlan(guid,mk){
   document.getElementById('plSilBtn').style.display=pl?'inline-flex':'none';
   document.getElementById('planModal').classList.add('show');
 }
-function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;_planAlmayan=false;}
+function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;_planAlmayan=false;_planHedefAuto=false;}
 async function kaydetPlan(){
   const tarih=document.getElementById('plTarih').value;
   if(!tarih){toast('⚠ Planlanan tarih gerekli','#d97706',2500);return;}
@@ -1348,6 +1350,19 @@ async function kaydetPlan(){
     aciklama:document.getElementById('plAciklama').value.trim()||null,durum:'Planlandı',
     olusturan:document.getElementById('plOlusturan').value.trim()||null};
   const konuInput=document.getElementById('plKonu').value.trim();
+  if(_planHedefAuto){
+    const aday=window._hedefAday||[];
+    const rows=aday.map(r=>{
+      const key=hedefKey(r); const h=HEDEF.get(key)||0; const [guid,mk]=key.split('|');
+      return {id:key,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+        lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:h,
+        konu:konuInput||`${r.makine_adi||''} — Seviye ${h} yetkinlik eğitimi`,...ortak};
+    });
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); closePlan(); renderPol(); renderEgt(); renderDash(); updateChgCount();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} hedef gelişim eğitimi planlandı`,'#16a34a',2500);}
+    catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+    return;
+  }
   if(_planAlmayan){
     const persler=(window._almData||[]).filter(p=>_almSel.has(p.guid));
     const konu=konuInput||window._almKonu||'';
@@ -1440,6 +1455,25 @@ function topluEgitimAc(){
   document.getElementById('plSure').value='';
   document.getElementById('plAciklama').value='';
   document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
+}
+
+// ===================== Hedef Gap'lerine Toplu Eğitim Planlama =====================
+function topluHedefEgitimAc(){
+  let aday;
+  if(_polSel.size){
+    aday=POL.filter(r=>{const k=hedefKey(r);const h=HEDEF.get(k);return _polSel.has(k)&&h&&(+r.yetenek||0)<h;});
+  }else{
+    aday=POL.filter(r=>{const h=HEDEF.get(hedefKey(r));return h&&(+r.yetenek||0)<h;});
+  }
+  if(!aday.length){toast('Hedefi yükseltilecek (mevcut<hedef) kayıt yok. Önce hedef belirleyin.','#d97706',3200);return;}
+  window._hedefAday=aday; _planHedefAuto=true; _planBulk=false; _planAlmayan=false; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Hedef Gelişim Eğitimleri</b><br><span class="muted">${_polSel.size?'Seçilen':'Tüm'} hedefli kayıtlardan <b>${aday.length}</b> tanesi (mevcut &lt; hedef) için eğitim planlanacak. Konu boş bırakılırsa her makine için otomatik atanır.</span>`;
+  document.getElementById('plKonu').value='';
+  document.getElementById('plTarih').value='';document.getElementById('plTur').value='İşbaşı Eğitim';
+  document.getElementById('plEgitici').value='';document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';document.getElementById('plOlusturan').value='';
   document.getElementById('plSilBtn').style.display='none';
   document.getElementById('planModal').classList.add('show');
 }
