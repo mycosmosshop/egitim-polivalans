@@ -67,6 +67,11 @@
   .sec-title{font-size:.8em;font-weight:700;color:#1e7e4a;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 10px;border-bottom:2px solid #dcfce7;padding-bottom:4px;}
   .btn-dgr{background:#1e7e4a;color:#fff;padding:5px 11px;border:none;border-radius:6px;cursor:pointer;font-size:.82em;font-weight:600;}
   .btn-dgr.done{background:#dcfce7;color:#166534;}
+  .chk-sev{border:1px solid #e2e8f0;border-radius:9px;margin-bottom:10px;overflow:hidden;}
+  .chk-sev-head{padding:8px 12px;font-weight:700;font-size:.9em;color:#fff;display:flex;align-items:center;gap:8px;}
+  .chk-sev-body{padding:8px 12px;}
+  .chk-item{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:.88em;cursor:pointer;}
+  .chk-item input{margin-top:3px;width:16px;height:16px;cursor:pointer;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -178,6 +183,7 @@
             <th>Hedef</th>
             <th>Durum</th>
             <th>Gerekli Eğitim / Değerlendirme</th>
+            <th>Son Değerlendirme</th>
           </tr></thead>
           <tbody id="polBody"></tbody>
         </table>
@@ -267,6 +273,34 @@
   </div>
 </div>
 
+<!-- Polivalans Değerlendirme (checklist) Modalı -->
+<div class="modal-bg" id="polModal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-head"><h3>🧩 Polivalans Yetkinlik Değerlendirmesi</h3><button class="modal-x" onclick="closePolDeger()">✕</button></div>
+    <div class="modal-body">
+      <div class="info" id="polDegerInfo"></div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:.86em;">
+        Aşağıdaki kriterler <b>mevcut yetenek seviyesine göre otomatik işaretlendi</b>. Gerektiğinde düzenleyin.
+        Tamamlanan en üst seviye, <b>hesaplanan yetkinlik</b> olarak gösterilir.
+      </div>
+      <div id="polChecklist"></div>
+      <div class="frow" style="grid-template-columns:1fr 1fr;margin-top:8px;">
+        <div class="fgroup"><label>Değerlendirme Tarihi</label><input type="date" id="pTarih"></div>
+        <div class="fgroup"><label>Değerlendiren</label><input type="text" id="pDegerlendiren" placeholder="Ad Soyad / Ünvan"></div>
+      </div>
+      <div style="background:#eff6ff;border-radius:8px;padding:12px;text-align:center;font-size:.95em;">
+        Hesaplanan Yetkinlik: <b id="pHesap" style="font-size:1.3em;color:#1e7e4a;">—</b>
+        <span class="muted" id="pHesapNot"></span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#fee2e2;color:#991b1b;" id="pSilBtn" onclick="silPolDeger()">🗑 Sil</button>
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closePolDeger()">İptal</button>
+      <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="kaydetPolDeger()">💾 Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -276,6 +310,16 @@ let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4
 let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
 let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
 let _modalUid=null;
+let PDEGER=new Map();                   // PDEGER: "guid|makine_kodu" -> {checklist,hesaplanan_seviye,deger_tarihi,...}
+let POL_BY_KEY=new Map();               // "guid|makine_kodu" -> polivalans kaydı
+let _polModalKey=null;
+// Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
+const PKRITER={
+  1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
+  2:['Kısmi gözetimle bağımsız çalışabiliyor','Sık karşılaşılan durumları yönetebiliyor','Temel ayar/kurulum ve bakımı yapabiliyor'],
+  3:['Tam bağımsız çalışabiliyor','Arıza/sorun giderme yapabiliyor','Kalite standartlarını sağlıyor ve kendi işini kontrol ediyor','Çalışma talimatlarına tam hâkim'],
+  4:['Başkalarına öğretebiliyor / eğitim verebiliyor','Süreç iyileştirme önerileri geliştirebiliyor','Tüm istisnai/karmaşık durumları yönetebiliyor','Standart ve talimat belirleyebiliyor']
+};
 let polSort={k:'personel',dir:1}, egtSort={k:'yil',dir:-1};
 const SEVIYE={0:'Yetkinlik yok',1:'Başlangıç',2:'Gelişmekte',3:'Yetkin',4:'Uzman'};
 let charts={};
@@ -300,16 +344,19 @@ async function fetchAll(table,select){
 async function loadAll(notify){
   try{
     if(notify)toast('Veriler yükleniyor...','#3b82f6',2000);
-    let hedefRows=[],degerRows=[];
-    [POL,EGT,hedefRows,degerRows]=await Promise.all([
+    let hedefRows=[],degerRows=[],polDegerRows=[];
+    [POL,EGT,hedefRows,degerRows,polDegerRows]=await Promise.all([
       fetchAll('egt_polivalans','*'),
       fetchAll('egt_egitim','*'),
       fetchAll('egt_hedef','id,hedef').catch(()=>[]),        // tablo yoksa sessizce boş
-      fetchAll('egt_degerlendirme','*').catch(()=>[])
+      fetchAll('egt_degerlendirme','*').catch(()=>[]),
+      fetchAll('egt_polivalans_deger','*').catch(()=>[])
     ]);
     HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
     DEGER=new Map(degerRows.map(r=>[r.uid,r]));
+    PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
     EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
+    POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
     buildFilters(); renderDash(); renderPol(); renderEgt();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
   }catch(e){
@@ -517,13 +564,19 @@ function renderPol(){
     const oneri = gap>0 ? `<span style="font-size:.92em;color:#b45309;">${esc(egitimOneri(mevcut,h))}</span>` : (h?'<span class="muted">—</span>':'');
     const sel=`<select onchange="saveHedef('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.value)" style="padding:3px 5px;border-radius:6px;border:1px solid #cbd5e1;font-weight:600;">
       <option value="">—</option>${[1,2,3,4].map(n=>`<option value="${n}" ${h==n?'selected':''}>${n}</option>`).join('')}</select>`;
+    const pd=PDEGER.get(key);
+    const sonDeger= pd&&pd.deger_tarihi
+      ? `<span class="badge b-ok" style="cursor:pointer;" title="Değerlendirmeyi aç">📋 ${esc(pd.deger_tarihi)}${pd.hesaplanan_seviye?' · sv.'+pd.hesaplanan_seviye:''}</span>`
+      : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>`;
+    const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
     return `<tr>
       <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
-      <td class="muted">${esc(r.makinegrup_adi)}</td><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makine_kodu)}</td>
+      <td class="muted">${esc(r.makinegrup_adi)}</td>${mkCell}<td class="muted">${esc(r.makine_kodu)}</td>
       <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
-      <td>${sel}</td><td>${durum}</td><td>${oneri}</td></tr>`;
+      <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
+      <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
   }).join('')
-    +(rows.length>2000?`<tr><td colspan="10" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    +(rows.length>2000?`<tr><td colspan="11" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
 }
 function escAttr(s){return (s==null?'':String(s)).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 async function saveHedef(guid,mk,val){
@@ -590,6 +643,82 @@ async function silDeger(){
   }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
 }
 
+// ===================== Polivalans Değerlendirme (checklist) =====================
+const SEV_RENK={1:'#ef4444',2:'#f59e0b',3:'#3b82f6',4:'#16a34a'};
+function bugun(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function openPolDeger(guid,mk){
+  const key=guid+'|'+mk; _polModalKey=key;
+  const r=POL_BY_KEY.get(key)||{}; const mevcut=+r.yetenek||0;
+  const pd=PDEGER.get(key);
+  // checklist: kayıt varsa onu kullan, yoksa mevcut yeteneğe göre otomatik (≤mevcut tüm kriterler işaretli)
+  let chk = pd&&pd.checklist ? pd.checklist : {};
+  if(!pd||!pd.checklist){ chk={}; for(let s=1;s<=4;s++) chk[s]=PKRITER[s].map(()=> s<=mevcut); }
+  document.getElementById('polDegerInfo').innerHTML=
+    `<b>${esc(r.makine_adi||'')}</b> <span class="muted">(${esc(r.makine_kodu||'')})</span><br>
+     👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 🏢 ${esc(r.departman||'')} &nbsp;·&nbsp; 📍 ${esc(r.lokasyon||'')}<br>
+     Mevcut Yetkinlik: <span class="yet yet${mevcut}" style="width:20px;height:20px;line-height:20px;">${mevcut}</span>`;
+  let html='';
+  for(let s=1;s<=4;s++){
+    html+=`<div class="chk-sev"><div class="chk-sev-head" style="background:${SEV_RENK[s]};">Seviye ${s} — ${SEVIYE[s]}</div><div class="chk-sev-body">`;
+    PKRITER[s].forEach((kr,i)=>{
+      const ck=chk[s]&&chk[s][i]?'checked':'';
+      html+=`<label class="chk-item"><input type="checkbox" data-sev="${s}" data-idx="${i}" ${ck} onchange="polHesapla()"><span>${esc(kr)}</span></label>`;
+    });
+    html+='</div></div>';
+  }
+  document.getElementById('polChecklist').innerHTML=html;
+  document.getElementById('pTarih').value=(pd&&pd.deger_tarihi)||bugun();
+  document.getElementById('pDegerlendiren').value=(pd&&pd.degerlendiren)||'';
+  document.getElementById('pSilBtn').style.display=pd?'inline-flex':'none';
+  polHesapla();
+  document.getElementById('polModal').classList.add('show');
+}
+function polCollect(){
+  const chk={1:[],2:[],3:[],4:[]};
+  document.querySelectorAll('#polChecklist input[type=checkbox]').forEach(c=>{
+    chk[+c.dataset.sev][+c.dataset.idx]=c.checked;
+  });
+  return chk;
+}
+function polHesapla(){
+  const chk=polCollect();
+  // tamamlanan en üst ardışık seviye (her seviyenin TÜM kriterleri işaretli)
+  let hesap=0;
+  for(let s=1;s<=4;s++){ if(chk[s].length===PKRITER[s].length && chk[s].every(Boolean)) hesap=s; else break; }
+  document.getElementById('pHesap').textContent=hesap||'—';
+  const r=POL_BY_KEY.get(_polModalKey)||{}; const mevcut=+r.yetenek||0;
+  let not='';
+  if(hesap>mevcut) not=` (LeanSys: ${mevcut} → değerlendirme ${hesap}, terfi adayı)`;
+  else if(hesap<mevcut) not=` (LeanSys: ${mevcut}, checklist eksik)`;
+  document.getElementById('pHesapNot').textContent=not;
+  return hesap;
+}
+function closePolDeger(){document.getElementById('polModal').classList.remove('show');_polModalKey=null;}
+async function kaydetPolDeger(){
+  if(!_polModalKey)return;
+  const [guid,mk]=_polModalKey.split('|');
+  const rec={id:_polModalKey,personel_guid:guid,makine_kodu:mk,
+    checklist:polCollect(),hesaplanan_seviye:polHesapla(),
+    deger_tarihi:document.getElementById('pTarih').value||null,
+    degerlendiren:document.getElementById('pDegerlendiren').value.trim()||null};
+  PDEGER.set(_polModalKey,rec); closePolDeger(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?on_conflict=id`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('🧩 Polivalans değerlendirmesi kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+async function silPolDeger(){
+  if(!_polModalKey)return; const key=_polModalKey;
+  PDEGER.delete(key); closePolDeger(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    toast('🗑 Değerlendirme silindi','#64748b',1500);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
 // ===================== EGITIM =====================
 function egtFiltered(){
   const q=document.getElementById('egtSearch').value.toLowerCase().trim();
@@ -650,7 +779,7 @@ async function refreshFromLeanSys(){
 // ===================== Excel =====================
 function exportXlsx(which){
   let rows,name;
-  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):''};});name='polivalans';}
+  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||''};});name='polivalans';}
   else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Eğitim Puanı':d.egitim_puan||'','Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
@@ -658,6 +787,7 @@ function exportXlsx(which){
 }
 
 document.getElementById('degerModal').addEventListener('click',e=>{if(e.target.id==='degerModal')closeDeger();});
+document.getElementById('polModal').addEventListener('click',e=>{if(e.target.id==='polModal')closePolDeger();});
 loadAll(true);
 </script>
 </body>
