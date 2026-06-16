@@ -231,8 +231,9 @@
             <th onclick="sortEgt('personel')">Personel</th>
             <th onclick="sortEgt('egitici')">Eğitici</th>
             <th onclick="sortEgt('gerceklesme')">Durum</th>
-            <th onclick="sortEgt('not_sonra')">Not</th>
-            <th>Değerlendirme</th>
+            <th onclick="sortEgt('not_sonra')">Sınav Notu</th>
+            <th onclick="sortEgt('degerlendirme')">Değ. Yöntemi</th>
+            <th>Etkinlik Değ.</th>
           </tr></thead>
           <tbody id="egtBody"></tbody>
         </table>
@@ -878,7 +879,7 @@ function renderEgt(){
         <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">—</td><td>${r.sure!=null?esc(r.sure):''}</td>
         <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici||'')}</td>
         <td><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 Planlandı</span></td>
-        <td>—</td><td><button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button></td></tr>`;
+        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td><button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button></td></tr>`;
     }
     const d=DEGER.get(r.uid);
     let dgrBtn;
@@ -897,8 +898,10 @@ function renderEgt(){
     <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
-    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td><td>${dgrBtn}</td></tr>`;}).join('')
-    +(rows.length>3000?`<tr><td colspan="12" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}${(r.not_once!=null&&r.not_once!=='')?` <span class="muted">(ön:${esc(r.not_once)})</span>`:''}</td>
+    <td>${esc(r.degerlendirme||'')}${(r.onceki_olcum||r.yeni_olcum)?`<br><span class="muted" style="font-size:.85em;">ölçüm: ${esc(r.onceki_olcum||'?')}→${esc(r.yeni_olcum||'?')}</span>`:''}</td>
+    <td>${dgrBtn}</td></tr>`;}).join('')
+    +(rows.length>3000?`<tr><td colspan="13" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
 }
 
 // ===================== LeanSys Güncelle =====================
@@ -923,7 +926,7 @@ async function refreshFromLeanSys(){
 function exportXlsx(which){
   let rows,name;
   if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};const pl=PLAN.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||'','Planlanan Eğitim Konusu':pl.konu||'','Planlanan Eğitim Tarihi':pl.plan_tarih||'','Planlanan Tür':pl.tur||'','Planlanan Eğitici':pl.egitici||''};});name='polivalans';}
-  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor',Not:r.not_sonra,'Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Sonucu':d.etkinlik_sonuc||'','Tekrar Eğitim Tarihi':d.tekrar_egitim_tarihi||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
+  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor','Sınav Notu':r.not_sonra,'Sınav Öncesi':r.not_once,'Değ. Yöntemi':r.degerlendirme||'','Ölçüm Öncesi':r.onceki_olcum||'','Ölçüm Sonrası':r.yeni_olcum||'','Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Sonucu':d.etkinlik_sonuc||'','Tekrar Eğitim Tarihi':d.tekrar_egitim_tarihi||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
   else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
   const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
   XLSX.writeFile(wb,name+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
