@@ -326,8 +326,9 @@
       </div>
       <div id="egtBulkBar" style="display:none;background:#faf5ff;border:1px solid #ede9fe;border-radius:8px;padding:7px 14px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap;">
         <span id="egtSelCount" style="font-weight:600;color:#5b21b6;"></span>
+        <button onclick="topluBekleyeAl()" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">↩ Bekleyene Al</button>
         <button onclick="topluEgtSil()" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">🗑 Seçilenleri Sil</button>
-        <span class="muted" style="font-size:.8em;">Yalnızca ● manuel kayıtlar silinebilir (LeanSys kayıtlarına dokunulmaz)</span>
+        <span class="muted" style="font-size:.8em;">Yalnızca ● manuel kayıtlar değiştirilir/silinir</span>
         <button onclick="_egtSel.clear();renderEgt()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#64748b;font-size:1.1em;" title="Seçimi bırak">✕</button>
       </div>
       <div class="table-wrap">
@@ -1989,6 +1990,23 @@ function _egtBulkUpdate(){
   document.getElementById('egtSelCount').textContent=n+' kayıt seçili';
   const chkAll=document.getElementById('egtChkAll');
   if(chkAll){const manN=egtFiltered().filter(r=>!r._plan&&r.kaynak==='manuel').length;chkAll.checked=n>0&&n>=manN;chkAll.indeterminate=n>0&&n<manN;}
+}
+async function topluBekleyeAl(){
+  const uids=[..._egtSel].filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak==='manuel'&&r.gerceklesme;});
+  if(!uids.length){toast('Seçili gerçekleşmiş manuel kayıt yok','#d97706',2500);return;}
+  if(!confirm(`${uids.length} kayıt "Bekliyor" durumuna alınacak (gerçekleşme tarihi silinecek). Devam?`))return;
+  uids.forEach(uid=>{const r=EGT_BY_UID.get(uid);if(r){r.gerceklesme=0;r.kayit_tarih=null;}});
+  _egtSel.clear();renderEgt();renderDash();
+  try{
+    for(let i=0;i<uids.length;i+=50){
+      const chunk=uids.slice(i,i+50);
+      const inList=chunk.map(u=>`"${u}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'PATCH',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({gerceklesme:0,kayit_tarih:null})});
+    }
+    toast(`↩ ${uids.length} kayıt "Bekliyor" durumuna alındı`,'#d97706',2500);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
 }
 async function topluEgtSil(){
   const uids=[..._egtSel];
