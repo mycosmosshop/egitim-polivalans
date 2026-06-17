@@ -657,6 +657,7 @@ let _planBulk=false;                    // toplu eğitim planla modu (polivalans
 let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid)
 let PASIF_GUIDS=new Set();              // ayrılan personel guid'leri (almayanlar/modal'dan gizlenir)
 let PASIF_DATA=[];                      // [{guid,ad}] — egt_ayar'da saklanır
+let AKTIF_GUIDS=null;                   // LeanSys son sync'ten gelen aktif personel guid seti (null=sync hiç yapılmadı)
 let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
 let AYAR={};                            // KPI hedefleri vb. (egt_ayar)
 let _planHedefAuto=false;               // hedef gap'lerine toplu eğitim planla modu
@@ -702,6 +703,13 @@ async function loadAll(notify){
     ]);
     try{ const ar=await fetchAll('egt_ayar','*'); AYAR={}; ar.forEach(r=>AYAR[r.anahtar]=r.deger); }catch(e){ AYAR={}; }
     try{const pd=AYAR['pasif_personeller'];PASIF_DATA=pd?JSON.parse(pd):[];PASIF_GUIDS=new Set(PASIF_DATA.map(p=>p.guid));}catch(e){PASIF_DATA=[];PASIF_GUIDS=new Set();}
+    // Aktif personel: son LeanSys sync'te gelen leansys kayıtlı POL guid'leri + manuel POL guid'leri
+    try{
+      const ag=AYAR['aktif_ls_guids'];
+      const lsSet=ag?new Set(JSON.parse(ag)):null;
+      const manSet=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>r.personel_guid||r.personel).filter(Boolean));
+      AKTIF_GUIDS=lsSet?new Set([...lsSet,...manSet]):null;
+    }catch(e){AKTIF_GUIDS=null;}
     // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
     const _pm=new Map();
     POL.forEach(r=>{
@@ -862,7 +870,7 @@ function openMEgt(){
   // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
   const seen=new Map();
   POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||''});});
-  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(p.guid)).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
+  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(p.guid)&&(!AKTIF_GUIDS||AKTIF_GUIDS.has(p.guid))).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
   const loks=[...new Set(_mEgtAllPers.map(p=>p.lokasyon).filter(Boolean))].sort();
   document.getElementById('mEgtLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
   _renderMEgtList(); _renderMEgtChips();
@@ -1201,6 +1209,8 @@ function renderKonuEgitim(konu,det){
   // (POL tarihine bakılmaz — polivalans değerlendirmesi yıllarca güncellenmeyebilir)
   const almayan=[...persMap.entries()].filter(([k])=>{
     if(kisi.has(k)||PASIF_GUIDS.has(k))return false;
+    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(k);
+    // Sync henüz yapılmadıysa yıl bazlı EGT kontrolüyle filtrele
     if(!yf)return true;
     return EGT.some(r=>r.yil===yf&&(r.personel_guid===k||r.personel===k));
   }).map(([k,v])=>({...v,guid:k}));
@@ -1290,7 +1300,11 @@ function renderDash(){
   // --- Eğitim almayanlar: polivalans personeli (lokasyon filtreli) − eğitim alanlar ---
   let polP=POL.filter(r=>(!lok||r.lokasyon===lok));
   const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{guid:k,ad:r.personel,lok:r.lokasyon,dept:r.departman});});
-  const almayanlar=[...persMap.entries()].filter(([k])=>!kisi.has(k)&&!PASIF_GUIDS.has(k)).map(([,v])=>v);
+  const almayanlar=[...persMap.entries()].filter(([k])=>{
+    if(kisi.has(k)||PASIF_GUIDS.has(k))return false;
+    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(k);
+    return true;
+  }).map(([,v])=>v);
 
   document.getElementById('dAdamSaat').textContent=Math.round(adamSaat).toLocaleString('tr');
   document.getElementById('dPlanSaat').textContent=Math.round(planSaat).toLocaleString('tr');
@@ -2298,7 +2312,14 @@ async function refreshFromLeanSys(){
     const res=await fetch('http://127.0.0.1:17777/refreshegitim',{signal:ctrl.signal});
     clearTimeout(tmo);
     const j=await res.json();
-    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+'). Yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
+    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+'). Yenileniyor...');await loadAll(false);
+      // Sync sonrası aktif LeanSys personelini egt_ayar'a kaydet
+      const lsGuids=[...new Set(POL.filter(r=>r.kaynak==='leansys').map(r=>r.personel_guid||r.personel).filter(Boolean))];
+      const lsVal=JSON.stringify(lsGuids);AYAR['aktif_ls_guids']=lsVal;
+      const manSet=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>r.personel_guid||r.personel).filter(Boolean));
+      AKTIF_GUIDS=new Set([...lsGuids,...manSet]);
+      await _batchUpsert('egt_ayar',[{anahtar:'aktif_ls_guids',deger:lsVal}],'anahtar');
+      toast('✅ Tamamlandı.');}
     else{toast('⚠️ Güncelleme atlandı: '+((j&&j.error)||'bilinmeyen')+'. Mevcut veri gösteriliyor.','#d97706',6000);await loadAll(false);}
   }catch(e){
     console.warn(e);
