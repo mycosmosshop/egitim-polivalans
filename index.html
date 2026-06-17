@@ -1487,7 +1487,12 @@ function polFiltered(){
   const yet=document.getElementById('polYet').value;
   const durum=document.getElementById('polDurum').value;
   return POL.filter(r=>{
-    if(_polSadceAktif&&AKTIF_GUIDS&&!AKTIF_GUIDS.has(normG(r.personel_guid||r.personel||'')))return false;
+    if(_polSadceAktif){
+      // cikis_tar dolu ve gecmiste ise cikmiş say
+      if(r.cikis_tar&&r.cikis_tar<=bugun())return false;
+      // El ile pasif isaretlenmis
+      if(PASIF_GUIDS.has(normG(r.personel_guid||r.personel||'')))return false;
+    }
     if(dept&&r.departman!==dept)return false;
     if(lok&&r.lokasyon!==lok)return false;
     if(yet&&String(r.yetenek)!==yet)return false;
