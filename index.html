@@ -1295,7 +1295,8 @@ function renderPersonelKart(){
     const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const h=HEDEF.get(key)||''; const m=+r.yetenek||0; const gap=h?h-m:0;
     return `<tr><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makinegrup_adi||'')}</td>
       <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
-      <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td></tr>`;
+      <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td>
+      <td><button onclick="silYetkinlik('${escAttr(r.uid||'')}','${escAttr(r.makine_adi||'')}','${escAttr(ad)}','${escAttr(guid||'')}')" style="background:none;border:1px solid #fca5a5;border-radius:4px;cursor:pointer;color:#dc2626;font-size:.75em;padding:1px 5px;line-height:1.4;" title="Yetkinlikten çıkar">✕</button></td></tr>`;
   }).join('');
   const egtSorted=[...egt].sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
   const egtRows=egtSorted.slice(0,200).map(r=>`<tr>
@@ -1316,7 +1317,7 @@ function renderPersonelKart(){
     <div class="grid2">
       <div class="chart-card" style="overflow:hidden;">
         <h3>🧩 Yetkinlikler <span class="muted" style="font-weight:400;">(${pol.length}) · Sv1:${yetC[0]} Sv2:${yetC[1]} Sv3:${yetC[2]} Sv4:${yetC[3]}</span></h3>
-        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${yetRows}</tbody></table></div>
+        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th><th style="width:28px;"></th></tr></thead><tbody>${yetRows}</tbody></table></div>
         ${alınmamisPolHtml}
       </div>
       <div class="chart-card" style="overflow:hidden;">
@@ -1511,6 +1512,18 @@ async function savePerPlan(){
       headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify(recs)});
   }catch(e){toast('⚠ Kaydedildi (sunucu sync hatası: '+e.message+')','#d97706',4000);}
+}
+async function silYetkinlik(uid, makineAdi, ad, guid){
+  const idx=POL.findIndex(r=>(uid&&r.uid===uid)||(r.makine_adi===makineAdi&&(r.personel_guid===guid||r.personel===ad)));
+  if(idx<0)return;
+  POL.splice(idx,1);
+  renderPersonelKart();
+  toast(`"${makineAdi}" yetkinlikten çıkarıldı`,'#dc2626',2500);
+  if(uid){
+    try{await fetch(`${SUPA}/rest/v1/pol_polivalans?uid=eq.${encodeURIComponent(uid)}`,{
+      method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }catch(e){toast('⚠ Sunucu silme hatası: '+e.message,'#d97706',4000);}
+  }
 }
 
 // ===================== KONU / MAKİNE KARTI =====================
