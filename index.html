@@ -331,9 +331,9 @@
       </div>
       <div id="egtBulkBar" style="display:none;background:#faf5ff;border:1px solid #ede9fe;border-radius:8px;padding:7px 14px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap;">
         <span id="egtSelCount" style="font-weight:600;color:#5b21b6;"></span>
+        <button onclick="topluEgtDuzenle()" style="background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">✏ Düzenle</button>
         <button onclick="topluBekleyeAl()" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">↩ Bekleyene Al</button>
         <button onclick="topluEgtSil()" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">🗑 Seçilenleri Sil</button>
-        <span class="muted" style="font-size:.8em;">Yalnızca ● manuel kayıtlar değiştirilir/silinir</span>
         <button onclick="_egtSel.clear();renderEgt()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#64748b;font-size:1.1em;" title="Seçimi bırak">✕</button>
       </div>
       <div class="table-wrap">
@@ -399,6 +399,31 @@
       </div>
     </div>
     <div id="konuDetay"></div>
+  </div>
+</div>
+
+<!-- Toplu Eğitim Düzenleme Modalı -->
+<div class="modal-bg" id="topluEgtModal" style="display:none;">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head"><h3>✏ Eğitim Düzenle</h3><button class="modal-x" onclick="closeTopluEgtDuzenle()">✕</button></div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <p id="topluEgtInfo" style="margin:0;font-size:.88em;color:#64748b;"></p>
+      <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Konu<input id="teDKonu" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:1em;" placeholder="(boş bırakırsan değişmez)"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Tür<input id="teDTur" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="İç Eğitim…"></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Süre (saat)<input id="teDSure" type="number" min="0" step="0.5" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Plan Tarihi<input id="teDTarih" type="date" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;"></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Lokasyon<input id="teDLok" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="(değişmez)"></label>
+      </div>
+      <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Eğitici<input id="teDEgitici" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:1em;" placeholder="(değişmez)"></label>
+      <p style="margin:0;font-size:.8em;color:#94a3b8;">Boş bırakılan alanlar mevcut değerini korur.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="closeTopluEgtDuzenle()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:7px 18px;cursor:pointer;">İptal</button>
+        <button onclick="saveTopluEgtDuzenle()" style="background:#1e40af;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600;">💾 Kaydet</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1054,8 +1079,9 @@ async function kaydetKopya(){
   sel.forEach((s,si)=>{
     const ht=shiftDateYear(s.tarih,ky,hy);
     if(katilim&&s.pers.length){
-      // Aktif personeli filtrele (AKTIF_GUIDS varsa ayrılanları atla)
-      const aktivPers=AKTIF_GUIDS?s.pers.filter(p=>AKTIF_GUIDS.has(normG(p.guid))):s.pers;
+      // Aktif personeli filtrele: cikis_tar geçmişteyse veya pasif listesindeyse atla
+      const _polCT=new Map();POL.forEach(r=>{const g=normG(r.personel_guid||'');if(g&&!_polCT.has(g))_polCT.set(g,r.cikis_tar||null);});
+      const aktivPers=s.pers.filter(p=>{const g=normG(p.guid||'');if(PASIF_GUIDS.has(g))return false;const ct=_polCT.get(g);return!(ct&&ct<=bugun());});
       atlananKisi+=s.pers.length-aktivPers.length;
       if(aktivPers.length){
         aktivPers.forEach((p,pi)=>recs.push({
@@ -2178,6 +2204,50 @@ async function topluBekleyeAl(){
         body:JSON.stringify({gerceklesme:0,kayit_tarih:null})});
     }
     toast(`↩ ${uids.length} kayıt "Bekliyor" durumuna alındı`,'#d97706',2500);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+function topluEgtDuzenle(){
+  const uids=[..._egtSel];
+  if(!uids.length){toast('Seçili kayıt yok','#d97706',2000);return;}
+  const first=EGT_BY_UID.get(uids[0])||{};
+  document.getElementById('topluEgtInfo').textContent=`${uids.length} kayıt düzenlenecek. Boş bırakılan alanlar değişmez.`;
+  document.getElementById('teDKonu').value=first.konu||'';
+  document.getElementById('teDTur').value=first.turu||'';
+  document.getElementById('teDSure').value=first.sure!=null?first.sure:'';
+  document.getElementById('teDTarih').value=first.plan_tarih||'';
+  document.getElementById('teDLok').value=first.lokasyon||'';
+  document.getElementById('teDEgitici').value=first.egitici||'';
+  document.getElementById('topluEgtModal').style.display='flex';
+}
+function closeTopluEgtDuzenle(){document.getElementById('topluEgtModal').style.display='none';}
+async function saveTopluEgtDuzenle(){
+  const uids=[..._egtSel];
+  if(!uids.length)return;
+  const patch={};
+  const konu=document.getElementById('teDKonu').value.trim();
+  const tur=document.getElementById('teDTur').value.trim();
+  const sure=document.getElementById('teDSure').value.trim();
+  const tarih=document.getElementById('teDTarih').value.trim();
+  const lok=document.getElementById('teDLok').value.trim();
+  const egitici=document.getElementById('teDEgitici').value.trim();
+  if(konu)patch.konu=konu;
+  if(tur)patch.turu=tur;
+  if(sure!=='')patch.sure=parseFloat(sure);
+  if(tarih)patch.plan_tarih=tarih;
+  if(lok)patch.lokasyon=lok;
+  if(egitici)patch.egitici=egitici;
+  if(!Object.keys(patch).length){toast('Değiştirilecek alan yok','#d97706',2000);return;}
+  uids.forEach(uid=>{const r=EGT_BY_UID.get(uid);if(r)Object.assign(r,patch);});
+  closeTopluEgtDuzenle();_egtSel.clear();buildFilters();renderEgt();renderDash();
+  try{
+    for(let i=0;i<uids.length;i+=50){
+      const chunk=uids.slice(i,i+50);
+      const inList=chunk.map(u=>`"${u}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'PATCH',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify(patch)});
+    }
+    toast(`✏ ${uids.length} kayıt güncellendi`,'#1e40af',2500);
   }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
 }
 function generateTutanak(){
