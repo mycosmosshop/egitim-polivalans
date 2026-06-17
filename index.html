@@ -1184,13 +1184,13 @@ function renderKonuEgitim(konu,det){
   const adamSaat=ger.reduce((s,r)=>s+(+r.sure||0),0);
   // o eğitimi almayan personel (lokasyon filtreli polivalans personeli - alanlar)
   const persMap=new Map(); POL.filter(r=>!lf||r.lokasyon===lf).forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
-  // Seçili yıl bazlı aktif personel filtresi: o yılda EGT kaydı VEYA POL tarihi o yıl içinde olan kişiler
-  const aktifYil=yf||String(new Date().getFullYear());
-  const aktifGuids=new Set([
-    ...EGT.filter(r=>r.yil===aktifYil).map(r=>r.personel_guid||r.personel),
-    ...POL.filter(r=>String(r.tarih||'')>=aktifYil+'-01-01').map(r=>r.personel_guid||r.personel)
-  ].filter(Boolean));
-  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)&&aktifGuids.has(k)).map(([k,v])=>({...v,guid:k}));
+  // Yıl filtresi varsa: o yılda herhangi bir EGT kaydı olan kişiler "aktif" sayılır
+  // (POL tarihine bakılmaz — polivalans değerlendirmesi yıllarca güncellenmeyebilir)
+  const almayan=[...persMap.entries()].filter(([k])=>{
+    if(kisi.has(k))return false;
+    if(!yf)return true; // yıl filtresi yoksa herkesi göster
+    return EGT.some(r=>r.yil===yf&&(r.personel_guid===k||r.personel===k));
+  }).map(([k,v])=>({...v,guid:k}));
   document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
   window._almData=almayan; window._almKonu=konu;
   const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
