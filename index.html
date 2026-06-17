@@ -1299,6 +1299,7 @@ function renderPersonelKart(){
     </div>
     ${_renderAlınmamisEgt(ad, guid, pol[0])}
   `;
+  setTimeout(filtrePerAlList, 0);
 }
 
 // ===================== PERSONEL EĞİTİM PLANLAMA =====================
@@ -1314,29 +1315,41 @@ function _renderAlınmamisEgt(ad, guid, polRec){
   _perAlınmamisList=[...konuMap.values()].filter(k=>!tamamlandi.has(k.konu)).sort((a,b)=>a.konu.localeCompare(b.konu,'tr'));
   _perPlanSel.clear();
   if(!_perAlınmamisList.length)return '<div class="chart-card" style="margin-top:12px;"><h3>✅ Tüm eğitimler tamamlandı</h3></div>';
-  const rows=_perAlınmamisList.map((k,i)=>`<tr style="cursor:pointer;" onclick="togglePerPlanSel(${i},this)">
-    <td><input type="checkbox" id="ppck${i}" style="cursor:pointer;accent-color:#1e7e4a;" onclick="event.stopPropagation();togglePerPlanSel(${i},this.closest('tr'))"></td>
-    <td><b>${esc(k.konu)}</b></td>
-    <td class="muted">${esc(k.turu)}</td>
-    <td class="muted">${k.sure?k.sure+' sa':''}</td>
-  </tr>`).join('');
   return `<div class="chart-card" style="margin-top:12px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
       <h3>📋 Alınmamış Eğitimler <span class="muted" style="font-weight:400;" id="perAlSayac">(${_perAlınmamisList.length} konu)</span></h3>
       <button onclick="openPerPlan('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr(polRec.lokasyon||'')}')" style="background:#1e7e4a;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:.88em;">📅 Seçilenleri Planla</button>
       <button onclick="perPlanHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.88em;">Tümünü Seç</button>
+      <input id="perAlAra" placeholder="🔍 Eğitim ara..." oninput="filtrePerAlList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;font-size:.9em;min-width:200px;flex:1;">
     </div>
     <div class="table-wrap" style="max-height:320px;">
       <table><thead><tr><th style="width:30px;"></th><th>Konu</th><th>Tür</th><th>Süre</th></tr></thead>
-      <tbody id="perAlBody">${rows}</tbody></table>
+      <tbody id="perAlBody"></tbody></table>
     </div>
   </div>`;
 }
 
-function togglePerPlanSel(i, row){
+function _perAlRow(k,i){
+  const sel=_perPlanSel.has(i);
+  return `<tr style="cursor:pointer;${sel?'background:#f0fdf4':''}" onclick="togglePerPlanSel(${i},this,!document.getElementById('ppck${i}').checked)">
+    <td><input type="checkbox" id="ppck${i}" ${sel?'checked':''} style="cursor:pointer;accent-color:#1e7e4a;" onclick="event.stopPropagation();togglePerPlanSel(${i},this.closest('tr'),this.checked)"></td>
+    <td><b>${esc(k.konu)}</b></td>
+    <td class="muted">${esc(k.turu)}</td>
+    <td class="muted">${k.sure?k.sure+' sa':''}</td>
+  </tr>`;
+}
+function filtrePerAlList(){
+  const q=(document.getElementById('perAlAra')?.value||'').toLowerCase();
+  const tbody=document.getElementById('perAlBody');
+  if(!tbody)return;
+  tbody.innerHTML=_perAlınmamisList
+    .map((k,i)=>({k,i}))
+    .filter(({k})=>!q||k.konu.toLowerCase().includes(q)||(k.turu||'').toLowerCase().includes(q))
+    .map(({k,i})=>_perAlRow(k,i)).join('');
+}
+function togglePerPlanSel(i, row, on){
   const chk=document.getElementById('ppck'+i);
   if(!chk)return;
-  const on=!chk.checked;
   chk.checked=on;
   if(on)_perPlanSel.add(i); else _perPlanSel.delete(i);
   if(row)row.style.background=on?'#f0fdf4':'';
@@ -1346,12 +1359,8 @@ function togglePerPlanSel(i, row){
 function perPlanHepsiniSec(){
   const hepsi=_perPlanSel.size<_perAlınmamisList.length;
   _perPlanSel.clear();
-  _perAlınmamisList.forEach((_,i)=>{
-    const chk=document.getElementById('ppck'+i);
-    const row=chk&&chk.closest('tr');
-    if(hepsi){_perPlanSel.add(i);if(chk)chk.checked=true;if(row)row.style.background='#f0fdf4';}
-    else{if(chk)chk.checked=false;if(row)row.style.background='';}
-  });
+  if(hepsi)_perAlınmamisList.forEach((_,i)=>_perPlanSel.add(i));
+  filtrePerAlList();
   document.getElementById('perAlSayac').textContent=
     `(${_perAlınmamisList.length} konu · ${_perPlanSel.size} seçili)`;
 }
