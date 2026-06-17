@@ -874,8 +874,8 @@ function openMEgt(){
   _mEgtSel.clear();
   // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
   const seen=new Map();
-  POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||''});});
-  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(normG(p.guid))&&(!AKTIF_GUIDS||AKTIF_GUIDS.has(normG(p.guid)))).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
+  POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||'',cikis_tar:r.cikis_tar||null});});
+  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(normG(p.guid))&&!(p.cikis_tar&&p.cikis_tar<=bugun())).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
   const loks=[...new Set(_mEgtAllPers.map(p=>p.lokasyon).filter(Boolean))].sort();
   document.getElementById('mEgtLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
   _renderMEgtList(); _renderMEgtChips();
@@ -2496,9 +2496,7 @@ function renderEgt(){
     }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
     if(d&&d.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(d.deger_tarihi)}</span>`;
     const isManuel=r.kaynak==='manuel';
-    const chkCell=isManuel
-      ?`<td><input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"></td>`
-      :'<td></td>';
+    const chkCell=`<td><input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"></td>`;
     const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
     return `<tr${isManuel?' style="background:#faf5ff;"':''}>
     ${chkCell}<td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
