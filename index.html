@@ -1174,10 +1174,12 @@ function renderKonuKart(){
 function renderKonuEgitim(konu,det){
   const lf=document.getElementById('konuLokF').value, yf=document.getElementById('konuYilF').value;
   const dur=document.getElementById('konuDurum').value;
-  let kayitlar=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
-  if(dur==='1') kayitlar=kayitlar.filter(r=>r.gerceklesme);
-  else if(dur==='0') kayitlar=kayitlar.filter(r=>!r.gerceklesme);
-  const ger=kayitlar.filter(r=>r.gerceklesme);
+  // Tüm kayıtlar (durum filtresi uygulanmadan) — istatistikler ve Katılanlar her zaman buradan
+  const kayitlarAll=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
+  const ger=kayitlarAll.filter(r=>r.gerceklesme);
+  const bekleyen=kayitlarAll.filter(r=>!r.gerceklesme);
+  // Durum filtresi yalnızca sol tablonun gösterimini etkiler
+  const gorKeyitlar=dur==='1'?ger:dur==='0'?bekleyen:kayitlarAll;
   const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
   const notlar=ger.map(r=>r.not_sonra).filter(v=>v!=null&&v!=='');
   const ortNot=notlar.length?(notlar.reduce((s,v)=>s+(+v||0),0)/notlar.length):0;
@@ -1193,7 +1195,8 @@ function renderKonuEgitim(konu,det){
   }).map(([k,v])=>({...v,guid:k}));
   document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
   window._almData=almayan; window._almKonu=konu;
-  const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
+  const gorLabel=dur==='0'?'⏳ Planlananlar':'✅ Katılanlar';
+  const gorRows=[...gorKeyitlar].sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||''))).slice(0,300).map(r=>`<tr>
     <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td>
     <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td><td class="muted">${esc(r.egitici||'')}</td></tr>`).join('');
   const almRows=almayan.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')).slice(0,500).map(v=>`<tr>
@@ -1201,15 +1204,15 @@ function renderKonuEgitim(konu,det){
     <td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`).join('');
   det.innerHTML=`
     <div class="stats">
-      <div class="stat"><div class="v">${kayitlar.length}</div><div class="l">Toplam Kayıt</div></div>
+      <div class="stat"><div class="v">${kayitlarAll.length}</div><div class="l">Toplam Kayıt</div></div>
       <div class="stat"><div class="v">${ger.length}</div><div class="l">Gerçekleşen</div></div>
       <div class="stat"><div class="v">${kisi.size}</div><div class="l">Katılan Kişi</div></div>
       <div class="stat blue"><div class="v">${Math.round(adamSaat)}</div><div class="l">Adam·Saat</div></div>
       <div class="stat amber"><div class="v">${ortNot?ortNot.toFixed(1):'—'}</div><div class="l">Ort. Sınav Notu</div></div>
     </div>
     <div class="grid2">
-      <div class="chart-card"><h3>✅ Katılanlar <span class="muted" style="font-weight:400;">(${ger.length})</span></h3>
-        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Lokasyon</th><th>Tarih</th><th>Not</th><th>Eğitici</th></tr></thead><tbody>${alanRows||'<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div></div>
+      <div class="chart-card"><h3>${gorLabel} <span class="muted" style="font-weight:400;">(${gorKeyitlar.length})</span></h3>
+        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Lokasyon</th><th>Tarih</th><th>Not</th><th>Eğitici</th></tr></thead><tbody>${gorRows||'<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div></div>
       <div class="chart-card">
         <h3 style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;" onclick="window._konuAlmYon=!window._konuAlmYon;renderKonuKart()">
           <span>🚫 Bu Eğitimi Almayanlar <span class="muted" style="font-weight:400;">(${almayan.length})</span></span>
