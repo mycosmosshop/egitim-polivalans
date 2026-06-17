@@ -419,7 +419,6 @@
       </div>
       <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Eğitici<input id="teDEgitici" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:1em;" placeholder="(değişmez)"></label>
       <!-- Tek kayıt seçilince göster -->
-      <datalist id="teDPersList"></datalist>
       <div id="teDPerFields" style="display:none;border-top:1px dashed #e2e8f0;padding-top:10px;grid-gap:10px;grid-template-columns:1fr 1fr;">
         <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Personel Adı<input id="teDPersonel" list="teDPersList" autocomplete="off" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;"></label>
         <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Görevi<input id="teDGorevi" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="(değişmez)"></label>
@@ -557,7 +556,7 @@
     <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>✏️ Manuel Eğitim Ekle</h3><button class="modal-x" onclick="closeMEgt()">✕</button></div>
     <div class="modal-body">
       <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
-      <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" list="mEgtKonuList" placeholder="Listeden seçin veya yazın" autocomplete="off"><datalist id="mEgtKonuList"></datalist></div>
+      <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" list="mEgtKonuList" placeholder="Listeden seçin veya yazın" autocomplete="off"></div>
       <div class="frow">
         <div class="fgroup"><label>Tarih *</label><input type="date" id="mEgtTarih"></div>
         <div class="fgroup"><label>Tür</label><select id="mEgtTur"><option>İç Eğitim</option><option>Dış Eğitim</option><option>İşbaşı Eğitim</option><option>Online Eğitim</option></select></div>
@@ -2694,5 +2693,8 @@ document.addEventListener('click',e=>{
 applyAdmin();
 loadAll(true);
 </script>
+<!-- Datalistler body seviyesinde — modal overflow:auto bunu kesmez -->
+<datalist id="teDPersList"></datalist>
+<datalist id="mEgtKonuList"></datalist>
 </body>
 </html>
