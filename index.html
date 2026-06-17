@@ -1563,23 +1563,25 @@ function openPerPolEkle(ad,guid,lok,dept){
 async function savePerPolEkle(){
   const yet=+document.getElementById('perPolYet').value;
   const tarih=document.getElementById('perPolTarih').value||bugun();
+  const now=Date.now();
   const recs=[..._perPolSel].map((i,idx)=>{
     const m=_perAlınmamisPolList[i];
     const kod=m.kodu||('MAN_'+slug(m.ad));
-    return {pol_inckey:-(Date.now()+idx),personel:_perPolAd,personel_guid:_perPolGuid||null,
-      makine_adi:m.ad,makine_kodu:kod,makinegrup_adi:m.grup||null,
+    return {pol_inckey:-(now+idx),personel:_perPolAd,personel_guid:_perPolGuid||null,
+      makine_adi:m.ad,makine_kodu:kod,makinegrup_adi:m.grup||null,makinegrup_kodu:null,
       yetenek:yet,guncel:1,tarih:tarih,
       departman:_perPolDept||null,lokasyon:_perPolLok||null,proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
   });
   recs.forEach(r=>{POL.push(r);POL_BY_KEY.set((r.personel_guid||'')+'|'+r.makine_kodu,r);});
   document.getElementById('perPolEkleModal').style.display='none';
   buildFilters(); renderPol(); renderPersonelKart();
-  toast(`✅ ${recs.length} yetkinlik eklendi → ${_perPolAd}`,'#6d28d9',3000);
   try{
-    await fetch(`${SUPA}/rest/v1/egt_polivalans`,{method:'POST',
+    const res=await fetch(`${SUPA}/rest/v1/egt_polivalans`,{method:'POST',
       headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify(recs)});
-  }catch(e){toast('⚠ Kaydedildi (sunucu sync hatası: '+e.message+')','#d97706',4000);}
+    if(res.ok){toast(`✅ ${recs.length} yetkinlik eklendi → ${_perPolAd}`,'#6d28d9',3000);}
+    else{const err=await res.text();toast('❌ Supabase kayıt hatası ('+res.status+'): '+err,'#dc2626',8000);}
+  }catch(e){toast('❌ Ağ hatası: '+e.message,'#dc2626',5000);}
 }
 function openPerPlan(ad,guid,lok){
   if(!_perPlanSel.size){toast('En az bir eğitim seçin','#d97706',2000);return;}
