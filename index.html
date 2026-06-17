@@ -378,7 +378,10 @@
           <option value="egitim">📚 Eğitim Konusu</option>
           <option value="makine">🏭 Makine / Proses</option>
         </select>
-        <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="renderKonuKart()" onchange="renderKonuKart()" style="min-width:260px;">
+        <span style="position:relative;display:inline-flex;align-items:center;">
+          <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="document.getElementById('konuSecTemizle').style.display=this.value?'':'none';renderKonuKart()" onchange="document.getElementById('konuSecTemizle').style.display=this.value?'':'none';renderKonuKart()" style="min-width:260px;padding-right:24px;">
+          <button id="konuSecTemizle" onclick="document.getElementById('konuSec').value='';this.style.display='none';renderKonuKart()" style="display:none;position:absolute;right:4px;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1em;line-height:1;padding:0;" title="Temizle">✕</button>
+        </span>
         <datalist id="konuDatalist"></datalist>
         <select id="konuLokF" onchange="renderKonuKart()"><option value="">Tüm Lokasyonlar</option></select>
         <select id="konuYilF" onchange="renderKonuKart()"><option value="">Tüm Yıllar</option></select>
