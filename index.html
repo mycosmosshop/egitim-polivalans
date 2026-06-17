@@ -2286,24 +2286,23 @@ function generateTutanak(){
 }
 async function topluEgtSil(){
   const uids=[..._egtSel];
-  // Güvenlik: sadece manuel kayıtları sil
+  if(!uids.length){toast('Seçili kayıt yok','#d97706',2000);return;}
   const manuelUids=uids.filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak==='manuel';});
-  const leansysVar=uids.length-manuelUids.length;
-  if(!manuelUids.length){toast('Seçili kayıtlar arasında silinebilir (manuel) kayıt yok','#d97706',3000);return;}
-  let msg=`${manuelUids.length} manuel eğitim kaydı silinecek.`;
-  if(leansysVar)msg+=` (${leansysVar} LeanSys kaydı korunacak)`;
-  if(!confirm(msg+' Devam?'))return;
-  manuelUids.forEach(uid=>{EGT=EGT.filter(r=>r.uid!==uid);EGT_BY_UID.delete(uid);});
+  const leansysUids=uids.filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak!=='manuel';});
+  let msg=`${uids.length} eğitim kaydı silinecek`;
+  if(leansysUids.length)msg+=`\n⚠ ${leansysUids.length} LeanSys kaydı dahil — bir sonraki senkronizasyonda geri gelir`;
+  if(!confirm(msg+'\n\nDevam?'))return;
+  uids.forEach(uid=>{EGT=EGT.filter(r=>r.uid!==uid);EGT_BY_UID.delete(uid);});
   _egtSel.clear();
   buildFilters();renderEgt();renderDash();updateChgCount();
   try{
-    for(let i=0;i<manuelUids.length;i+=50){
-      const chunk=manuelUids.slice(i,i+50);
+    for(let i=0;i<uids.length;i+=50){
+      const chunk=uids.slice(i,i+50);
       const inList=chunk.map(u=>`"${u}"`).join(',');
       await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'DELETE',
         headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
     }
-    toast(`🗑 ${manuelUids.length} kayıt silindi`,'#64748b',2000);
+    toast(`🗑 ${uids.length} kayıt silindi`,'#64748b',2000);
   }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',5000);}
 }
 // ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
@@ -2423,10 +2422,11 @@ function renderEgt(){
       const isManuel=rs.some(r=>r.kaynak==='manuel');
       const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;">●</span>':'';
       const durum=gerN===rs.length?'<span class="badge b-ok">Tümü Gerçekleşti</span>':gerN>0?`<span class="badge" style="background:#fef3c7;color:#92400e;">${gerN}/${rs.length}</span>`:'<span class="badge b-no">Bekliyor</span>';
-      const manUids=rs.filter(r=>r.kaynak==='manuel').map(r=>r.uid);
-      _egtGrupMap.set(gk,manUids);
-      const allManSel=manUids.length>0&&manUids.every(u=>_egtSel.has(u));
-      const grupChk=isManuel?`<input type="checkbox" ${allManSel?'checked':''} onclick="toggleEgtGrupSel('${escAttr(gk)}',this.checked,event)" style="cursor:pointer;accent-color:#7c3aed;vertical-align:middle;margin-right:3px;">`:'';
+      const allUids=rs.map(r=>r.uid);
+      _egtGrupMap.set(gk,allUids);
+      const allGrupSel=allUids.length>0&&allUids.every(u=>_egtSel.has(u));
+      const someGrupSel=!allGrupSel&&allUids.some(u=>_egtSel.has(u));
+      const grupChk=`<input type="checkbox" ${allGrupSel?'checked':''} onclick="toggleEgtGrupSel('${escAttr(gk)}',this.checked,event)" style="cursor:pointer;accent-color:#7c3aed;vertical-align:middle;margin-right:3px;" ${someGrupSel?'ref="indeterminate"':''}>`;
       html+=`<tr onclick="toggleEgtGrup('${escAttr(gk)}')" style="cursor:pointer;background:#f1f5f9;border-top:2px solid #cbd5e1;">
         <td style="text-align:center;color:#64748b;font-size:.9em;">${grupChk}<span>${acik?'▼':'▶'}</span></td>
         <td>${esc(f.yil||'')}</td><td class="muted">${esc(f.lokasyon||'')}</td>
