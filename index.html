@@ -1045,15 +1045,27 @@ async function kaydetKopya(){
   const sel=_kopySessions.filter(s=>_kopyaSel.has(s.key));
   const ts=Date.now();
   const recs=[];
+  let atlananKisi=0;
   sel.forEach((s,si)=>{
     const ht=shiftDateYear(s.tarih,ky,hy);
     if(katilim&&s.pers.length){
-      s.pers.forEach((p,pi)=>recs.push({
-        uid:`man_kpy_${ts}_${si}_${pi}`,plan_inckey:null,yil:String(hy),
-        konu:s.konu,turu:s.tur||null,lokasyon:p.lokasyon||s.lok||null,
-        plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
-        personel:p.personel,personel_guid:p.guid,egitici:s.egitici||null,kaynak:'manuel'
-      }));
+      // Aktif personeli filtrele (AKTIF_GUIDS varsa ayrılanları atla)
+      const aktivPers=AKTIF_GUIDS?s.pers.filter(p=>AKTIF_GUIDS.has(p.guid)):s.pers;
+      atlananKisi+=s.pers.length-aktivPers.length;
+      if(aktivPers.length){
+        aktivPers.forEach((p,pi)=>recs.push({
+          uid:`man_kpy_${ts}_${si}_${pi}`,plan_inckey:null,yil:String(hy),
+          konu:s.konu,turu:s.tur||null,lokasyon:p.lokasyon||s.lok||null,
+          plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+          personel:p.personel,personel_guid:p.guid,egitici:s.egitici||null,kaynak:'manuel'
+        }));
+      }else{
+        // Tüm katılımcılar ayrılmış — eğitimi katılımcısız oluştur
+        recs.push({uid:`man_kpy_${ts}_${si}_0`,plan_inckey:null,yil:String(hy),
+          konu:s.konu,turu:s.tur||null,lokasyon:s.lok||null,
+          plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+          personel:null,personel_guid:null,egitici:s.egitici||null,kaynak:'manuel'});
+      }
     }else{
       recs.push({uid:`man_kpy_${ts}_${si}_0`,plan_inckey:null,yil:String(hy),
         konu:s.konu,turu:s.tur||null,lokasyon:s.lok||null,
@@ -1067,7 +1079,7 @@ async function kaydetKopya(){
     await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
       headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify(recs)});
-    toast(`🔄 ${sel.length} eğitim ${hy} yılına kopyalandı (${recs.length} kayıt)`,'#0891b2',3000);
+    toast(`🔄 ${sel.length} eğitim ${hy} yılına kopyalandı (${recs.length} kayıt)${atlananKisi?` · ${atlananKisi} ayrılan katılımcı atlandı`:''}`,'#0891b2',4000);
   }catch(e){toast('❌ Kopyalanamadı: '+e.message,'#dc2626',5000);}
 }
 
