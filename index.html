@@ -680,6 +680,7 @@ const PALETTE=['#1e7e4a','#2563eb','#d97706','#9333ea','#0891b2','#dc2626','#65a
 
 function toast(msg,color='#1e7e4a',ms=3500){const t=document.getElementById('toast');t.textContent=msg;t.style.background=color;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',ms);}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function normG(g){return g?(String(g)).toUpperCase().replace(/[{}\s]/g,''):'';}  // GUID normalizasyon: {ABC-123} ve abc-123 eslesir
 function opts(arr){return arr.map(v=>`<option>${esc(v)}</option>`).join('');}
 
 async function fetchAll(table,select){
@@ -710,8 +711,8 @@ async function loadAll(notify){
     // Aktif personel: PER001_PERSONEL_TBL_GUNCEL'den gelen kesin liste (sync'te egt_ayar'a kaydedilir) + manuel POL guid'leri
     try{
       const pg=AYAR['aktif_per_guids'];
-      const perSet=pg?new Set(JSON.parse(pg)):null;
-      const manGuids=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>r.personel_guid||r.personel).filter(Boolean));
+      const perSet=pg?new Set(JSON.parse(pg).map(normG).filter(Boolean)):null;
+      const manGuids=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>normG(r.personel_guid||r.personel||'')).filter(Boolean));
       AKTIF_GUIDS=perSet&&perSet.size>0?new Set([...perSet,...manGuids]):null;
     }catch(e){AKTIF_GUIDS=null;}
     // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
@@ -874,7 +875,7 @@ function openMEgt(){
   // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
   const seen=new Map();
   POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||''});});
-  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(p.guid)&&(!AKTIF_GUIDS||AKTIF_GUIDS.has(p.guid))).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
+  _mEgtAllPers=[...seen.values()].filter(p=>!PASIF_GUIDS.has(normG(p.guid))&&(!AKTIF_GUIDS||AKTIF_GUIDS.has(normG(p.guid)))).sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
   const loks=[...new Set(_mEgtAllPers.map(p=>p.lokasyon).filter(Boolean))].sort();
   document.getElementById('mEgtLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
   _renderMEgtList(); _renderMEgtChips();
@@ -1054,7 +1055,7 @@ async function kaydetKopya(){
     const ht=shiftDateYear(s.tarih,ky,hy);
     if(katilim&&s.pers.length){
       // Aktif personeli filtrele (AKTIF_GUIDS varsa ayrılanları atla)
-      const aktivPers=AKTIF_GUIDS?s.pers.filter(p=>AKTIF_GUIDS.has(p.guid)):s.pers;
+      const aktivPers=AKTIF_GUIDS?s.pers.filter(p=>AKTIF_GUIDS.has(normG(p.guid))):s.pers;
       atlananKisi+=s.pers.length-aktivPers.length;
       if(aktivPers.length){
         aktivPers.forEach((p,pi)=>recs.push({
@@ -1224,8 +1225,8 @@ function renderKonuEgitim(konu,det){
   // Yıl filtresi varsa: o yılda herhangi bir EGT kaydı olan kişiler "aktif" sayılır
   // (POL tarihine bakılmaz — polivalans değerlendirmesi yıllarca güncellenmeyebilir)
   const almayan=[...persMap.entries()].filter(([k])=>{
-    if(kisi.has(k)||PASIF_GUIDS.has(k))return false;
-    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(k);
+    if(kisi.has(k)||PASIF_GUIDS.has(normG(k)))return false;
+    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(normG(k));
     // Sync henüz yapılmadıysa yıl bazlı EGT kontrolüyle filtrele
     if(!yf)return true;
     return EGT.some(r=>r.yil===yf&&(r.personel_guid===k||r.personel===k));
@@ -1317,8 +1318,8 @@ function renderDash(){
   let polP=POL.filter(r=>(!lok||r.lokasyon===lok));
   const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{guid:k,ad:r.personel,lok:r.lokasyon,dept:r.departman});});
   const almayanlar=[...persMap.entries()].filter(([k])=>{
-    if(kisi.has(k)||PASIF_GUIDS.has(k))return false;
-    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(k);
+    if(kisi.has(k)||PASIF_GUIDS.has(normG(k)))return false;
+    if(AKTIF_GUIDS)return AKTIF_GUIDS.has(normG(k));
     return true;
   }).map(([,v])=>v);
 
@@ -1486,7 +1487,7 @@ function polFiltered(){
   const yet=document.getElementById('polYet').value;
   const durum=document.getElementById('polDurum').value;
   return POL.filter(r=>{
-    if(_polSadceAktif&&AKTIF_GUIDS&&!AKTIF_GUIDS.has(r.personel_guid||r.personel))return false;
+    if(_polSadceAktif&&AKTIF_GUIDS&&!AKTIF_GUIDS.has(normG(r.personel_guid||r.personel||'')))return false;
     if(dept&&r.departman!==dept)return false;
     if(lok&&r.lokasyon!==lok)return false;
     if(yet&&String(r.yetenek)!==yet)return false;
