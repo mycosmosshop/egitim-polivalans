@@ -440,6 +440,7 @@
     <div style="padding:16px;display:grid;gap:12px;">
       <p style="margin:0;font-size:.85em;color:#64748b;">Boş bırakılan alanlar tutanakta boş çıkar.</p>
       <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Düzenleyenin Ünvanı<input id="tunUnvan" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.95em;" placeholder="Örn: Kalite Müdürü"></label>
+      <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Eğitim Saati<input id="tunSaat" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.95em;" placeholder="09:00"></label>
       <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Kullanılan Doküman No<input id="tunDokNo" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.95em;" placeholder="FR-xx, PR-xx…"></label>
       <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Doküman Rev.No / Tarih<input id="tunDokRev" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.95em;" placeholder="00 / 01.01.2024"></label>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
@@ -2320,6 +2321,7 @@ function generateTutanak(){
   }
   _tutanakRows=rows;
   document.getElementById('tunUnvan').value='';
+  document.getElementById('tunSaat').value='';
   document.getElementById('tunDokNo').value='';
   document.getElementById('tunDokRev').value='';
   document.getElementById('tutanakOnayModal').style.display='flex';
@@ -2327,6 +2329,7 @@ function generateTutanak(){
 function doGenerateTutanak(){
   document.getElementById('tutanakOnayModal').style.display='none';
   const tunUnvan=document.getElementById('tunUnvan').value.trim();
+  const tunSaat=document.getElementById('tunSaat').value.trim();
   const tunDokNo=document.getElementById('tunDokNo').value.trim();
   const tunDokRev=document.getElementById('tunDokRev').value.trim();
   const rows=_tutanakRows;
@@ -2348,7 +2351,7 @@ function doGenerateTutanak(){
     </tr></table>
     <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
       <tr style="height:20px"><td style="white-space:nowrap;width:17%"><b>DÜZENLEYEN :</b></td><td class=bb style="width:36%">${e(f.egitici)}</td><td style="white-space:nowrap;width:13%;text-align:right"><b>TARİHİ :</b></td><td class=bb>${e(f.kayit_tarih||f.plan_tarih)}</td></tr>
-      <tr style="height:20px"><td><b>UNVANI :</b></td><td class=bb>${e(tunUnvan)}</td><td style="text-align:right"><b>SAATI :</b></td><td class=bb></td></tr>
+      <tr style="height:20px"><td><b>UNVANI :</b></td><td class=bb>${e(tunUnvan)}</td><td style="text-align:right"><b>SAATI :</b></td><td class=bb>${e(tunSaat)}</td></tr>
       <tr style="height:20px"><td><b>İMZASI :</b></td><td class=bb></td><td style="text-align:right"><b>YERİ :</b></td><td class=bb>${e(f.lokasyon)}</td></tr>
     </table>
     <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
@@ -2396,6 +2399,7 @@ function doGenerateTutanak(){
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Arial,sans-serif;font-size:9pt;background:#fff}
       .page{width:197mm;margin:0 auto;padding:8mm 8mm 4mm;page-break-after:always}
+      .page:last-child{page-break-after:avoid}
       table{border-collapse:collapse;width:100%}
       td,th{padding:1px 4px}
       .bb{border-bottom:1px solid #000}
@@ -2403,6 +2407,7 @@ function doGenerateTutanak(){
       @media print{
         @page{size:A4;margin:0}
         .page{margin:0;width:100%;padding:7mm 8mm 4mm}
+        .page:last-child{page-break-after:avoid}
       }
     </style></head><body>${pages}</body></html>`;
   const w=window.open('','_blank','width=900,height=950');
