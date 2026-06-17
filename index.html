@@ -1563,18 +1563,20 @@ function openPerPolEkle(ad,guid){
 async function savePerPolEkle(){
   const yet=+document.getElementById('perPolYet').value;
   const tarih=document.getElementById('perPolTarih').value||bugun();
-  const recs=[..._perPolSel].map(i=>{
+  const recs=[..._perPolSel].map((i,idx)=>{
     const m=_perAlınmamisPolList[i];
-    return {uid:crypto.randomUUID(),personel:_perPolAd,personel_guid:_perPolGuid||null,
-      makine_adi:m.ad,makine_kodu:m.kodu||null,makinegrup_adi:m.grup||null,
-      yetenek:yet,degerlendirme_tar:tarih,kaynak:'manuel'};
+    const kod=m.kodu||('MAN_'+slug(m.ad));
+    return {pol_inckey:-(Date.now()+idx),personel:_perPolAd,personel_guid:_perPolGuid||null,
+      makine_adi:m.ad,makine_kodu:kod,makinegrup_adi:m.grup||null,
+      yetenek:yet,guncel:1,tarih:tarih,
+      departman:null,lokasyon:null,proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
   });
-  recs.forEach(r=>{POL.push(r);});
+  recs.forEach(r=>{POL.push(r);POL_BY_KEY.set((r.personel_guid||'')+'|'+r.makine_kodu,r);});
   document.getElementById('perPolEkleModal').style.display='none';
-  renderPersonelKart();
+  buildFilters(); renderPol(); renderPersonelKart();
   toast(`✅ ${recs.length} yetkinlik eklendi → ${_perPolAd}`,'#6d28d9',3000);
   try{
-    await fetch(`${SUPA}/rest/v1/pol_polivalans`,{method:'POST',
+    await fetch(`${SUPA}/rest/v1/egt_polivalans`,{method:'POST',
       headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
       body:JSON.stringify(recs)});
   }catch(e){toast('⚠ Kaydedildi (sunucu sync hatası: '+e.message+')','#d97706',4000);}
@@ -1612,13 +1614,15 @@ async function savePerPlan(){
   }catch(e){toast('⚠ Kaydedildi (sunucu sync hatası: '+e.message+')','#d97706',4000);}
 }
 async function silYetkinlik(uid, makineAdi, ad, guid){
-  const idx=POL.findIndex(r=>(uid&&r.uid===uid)||(r.makine_adi===makineAdi&&(r.personel_guid===guid||r.personel===ad)));
+  const idx=POL.findIndex(r=>r.makine_adi===makineAdi&&(r.personel_guid===guid||r.personel===ad));
   if(idx<0)return;
-  POL.splice(idx,1);
+  const rec=POL[idx];
+  const key=(rec.personel_guid||'')+'|'+(rec.makine_kodu||'');
+  POL.splice(idx,1); POL_BY_KEY.delete(key);
   renderPersonelKart();
   toast(`"${makineAdi}" yetkinlikten çıkarıldı`,'#dc2626',2500);
-  if(uid){
-    try{await fetch(`${SUPA}/rest/v1/pol_polivalans?uid=eq.${encodeURIComponent(uid)}`,{
+  if(rec.pol_inckey!=null){
+    try{await fetch(`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${rec.pol_inckey}`,{
       method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
     }catch(e){toast('⚠ Sunucu silme hatası: '+e.message,'#d97706',4000);}
   }
