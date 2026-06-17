@@ -315,7 +315,8 @@
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('egtMenu')">⚙️ İşlemler ▾</button>
           <div class="dropdown-menu" id="egtMenu">
             <button onclick="topluOtoDeger()">🎯 Otomatik Değerlendir</button>
-            <button onclick="topluTamamla()">✅ Görünenleri Tamamla</button>
+            <button onclick="topluTamamla()">✅ Tarihi Gelenleri Tamamla</button>
+            <button id="egtUndoBtn" onclick="egtUndo()" style="display:none;color:#0891b2;">↩ Geri Al (son tamamla)</button>
             <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
             <button onclick="openKopya()">🔄 Önceki Yılı Kopyala</button>
             <hr>
@@ -323,9 +324,16 @@
           </div>
         </div>
       </div>
+      <div id="egtBulkBar" style="display:none;background:#faf5ff;border:1px solid #ede9fe;border-radius:8px;padding:7px 14px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span id="egtSelCount" style="font-weight:600;color:#5b21b6;"></span>
+        <button onclick="topluEgtSil()" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:.88em;">🗑 Seçilenleri Sil</button>
+        <span class="muted" style="font-size:.8em;">Yalnızca ● manuel kayıtlar silinebilir (LeanSys kayıtlarına dokunulmaz)</span>
+        <button onclick="_egtSel.clear();renderEgt()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#64748b;font-size:1.1em;" title="Seçimi bırak">✕</button>
+      </div>
       <div class="table-wrap">
         <table id="egtTable">
           <thead><tr>
+            <th style="width:28px;"><input type="checkbox" id="egtChkAll" onchange="egtSelAll(this.checked)" style="cursor:pointer;accent-color:#7c3aed;" title="Manuel kayıtları seç/bırak"></th>
             <th onclick="sortEgt('yil')">Yıl</th>
             <th onclick="sortEgt('lokasyon')">Lokasyon</th>
             <th onclick="sortEgt('konu')">Konu</th>
@@ -1933,18 +1941,76 @@ async function saveGercTarih(uid,tarih){
     toast('📅 Gerçekleşme tarihi kaydedildi','#16a34a',1800);
   }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',4000);}
 }
-// ===================== TOPLU TAMAMLA (görünen bekleyenleri) =====================
+// ===================== TOPLU TAMAMLA — sadece tarihi geçmiş/bugün olanlar =====================
+let _egtUndoBuf=null;
 async function topluTamamla(){
-  const aday=egtFiltered().filter(r=>!r._plan&&!r.gerceklesme);
-  if(!aday.length){toast('Tamamlanacak bekleyen eğitim yok','#d97706',2500);return;}
-  if(!confirm(`Filtrede görünen ${aday.length} bekleyen eğitim, plan tarihleri kullanılarak "Gerçekleşti" olarak işaretlenecek. Devam?`))return;
   const today=bugun();
-  aday.forEach(r=>{r.gerceklesme=1;r.kayit_tarih=r.plan_tarih||today;});
+  const aday=egtFiltered().filter(r=>!r._plan&&!r.gerceklesme&&r.plan_tarih&&r.plan_tarih<=today);
+  if(!aday.length){toast('Tarihi gelmiş bekleyen eğitim yok (plan tarihi ≤ bugün)','#d97706',3000);return;}
+  if(!confirm(`Plan tarihi bugün veya geçmişte olan ${aday.length} eğitim "Gerçekleşti" olarak işaretlenecek. Devam?`))return;
+  // Geri alma için önceki durumu sakla
+  _egtUndoBuf=aday.map(r=>({uid:r.uid,kayit_tarih:r.kayit_tarih,gerceklesme:r.gerceklesme}));
+  aday.forEach(r=>{r.gerceklesme=1;r.kayit_tarih=r.plan_tarih;});
   renderEgt();renderDash();
+  const btn=document.getElementById('egtUndoBtn');if(btn)btn.style.display='';
   try{
     await _batchUpsert('egt_egitim',aday.map(r=>({uid:r.uid,gerceklesme:1,kayit_tarih:r.kayit_tarih})),'uid');
-    toast(`✅ ${aday.length} eğitim tamamlandı olarak işaretlendi`,'#16a34a',2500);
+    toast(`✅ ${aday.length} eğitim tamamlandı · İşlemler → ↩ Geri Al ile iptal edebilirsiniz`,'#16a34a',5000);
   }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+async function egtUndo(){
+  if(!_egtUndoBuf||!_egtUndoBuf.length){toast('Geri alınacak işlem yok','#d97706',2000);return;}
+  if(!confirm(`${_egtUndoBuf.length} eğitimin tamamlandı işareti geri alınacak. Devam?`))return;
+  _egtUndoBuf.forEach(b=>{const r=EGT_BY_UID.get(b.uid);if(r){r.kayit_tarih=b.kayit_tarih;r.gerceklesme=b.gerceklesme;}});
+  const buf=_egtUndoBuf; _egtUndoBuf=null;
+  const btn=document.getElementById('egtUndoBtn');if(btn)btn.style.display='none';
+  renderEgt();renderDash();
+  try{
+    await _batchUpsert('egt_egitim',buf.map(b=>({uid:b.uid,gerceklesme:b.gerceklesme,kayit_tarih:b.kayit_tarih})),'uid');
+    toast(`↩ ${buf.length} eğitim geri alındı`,'#0891b2',2500);
+  }catch(e){toast('❌ Geri alınamadı: '+e.message,'#dc2626',5000);}
+}
+// ===================== EĞİTİM ÇOKLU SEÇİM + SİL (yalnız manuel) =====================
+let _egtSel=new Set();
+function toggleEgtSel(uid,on){
+  if(on)_egtSel.add(uid);else _egtSel.delete(uid);
+  _egtBulkUpdate();
+}
+function egtSelAll(on){
+  const manuelRows=egtFiltered().filter(r=>!r._plan&&r.kaynak==='manuel');
+  if(on)manuelRows.forEach(r=>_egtSel.add(r.uid));
+  else _egtSel.clear();
+  renderEgt();
+}
+function _egtBulkUpdate(){
+  const bar=document.getElementById('egtBulkBar');
+  const n=_egtSel.size;
+  bar.style.display=n?'flex':'none';
+  document.getElementById('egtSelCount').textContent=n+' kayıt seçili';
+  const chkAll=document.getElementById('egtChkAll');
+  if(chkAll){const manN=egtFiltered().filter(r=>!r._plan&&r.kaynak==='manuel').length;chkAll.checked=n>0&&n>=manN;chkAll.indeterminate=n>0&&n<manN;}
+}
+async function topluEgtSil(){
+  const uids=[..._egtSel];
+  // Güvenlik: sadece manuel kayıtları sil
+  const manuelUids=uids.filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak==='manuel';});
+  const leansysVar=uids.length-manuelUids.length;
+  if(!manuelUids.length){toast('Seçili kayıtlar arasında silinebilir (manuel) kayıt yok','#d97706',3000);return;}
+  let msg=`${manuelUids.length} manuel eğitim kaydı silinecek.`;
+  if(leansysVar)msg+=` (${leansysVar} LeanSys kaydı korunacak)`;
+  if(!confirm(msg+' Devam?'))return;
+  manuelUids.forEach(uid=>{EGT=EGT.filter(r=>r.uid!==uid);EGT_BY_UID.delete(uid);});
+  _egtSel.clear();
+  buildFilters();renderEgt();renderDash();updateChgCount();
+  try{
+    for(let i=0;i<manuelUids.length;i+=50){
+      const chunk=manuelUids.slice(i,i+50);
+      const inList=chunk.map(u=>`"${u}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'DELETE',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast(`🗑 ${manuelUids.length} kayıt silindi`,'#64748b',2000);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',5000);}
 }
 // ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
 async function topluOtoDeger(){
@@ -2040,10 +2106,13 @@ function renderEgt(){
       }
     }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
     if(d&&d.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(d.deger_tarihi)}</span>`;
-    const manRozE=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelEgt('${esc(r.uid)}')" title="Manuel kayıt — sil">🗑</span>`:'';
-    const manDot=r.kaynak==='manuel'?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
-    return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
-    <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b>${manRozE}</td><td class="muted">${esc(r.turu)}</td>
+    const isManuel=r.kaynak==='manuel';
+    const chkCell=isManuel
+      ?`<td><input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"></td>`
+      :'<td></td>';
+    const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
+    return `<tr${isManuel?' style="background:#faf5ff;"':''}>
+    ${chkCell}<td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
     <td class="muted">${esc(r.plan_tarih||'')}</td><td><input type="date" value="${r.kayit_tarih||''}" onchange="saveGercTarih('${escAttr(r.uid)}',this.value)" style="border:none;background:transparent;font-size:.83em;color:#64748b;cursor:pointer;padding:0;width:110px;" title="Gerçekleşme tarihini düzenle"></td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
