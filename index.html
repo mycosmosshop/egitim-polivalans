@@ -703,11 +703,12 @@ async function loadAll(notify){
     ]);
     try{ const ar=await fetchAll('egt_ayar','*'); AYAR={}; ar.forEach(r=>AYAR[r.anahtar]=r.deger); }catch(e){ AYAR={}; }
     try{const pd=AYAR['pasif_personeller'];PASIF_DATA=pd?JSON.parse(pd):[];PASIF_GUIDS=new Set(PASIF_DATA.map(p=>p.guid));}catch(e){PASIF_DATA=[];PASIF_GUIDS=new Set();}
-    // Aktif personel: POL tablosundaki leansys kayıtlı guid'ler + manuel guid'ler (her loadAll'da otomatik türetilir)
+    // Aktif personel: PER001_PERSONEL_TBL_GUNCEL'den gelen kesin liste (sync'te egt_ayar'a kaydedilir) + manuel POL guid'leri
     try{
-      const lsGuids=new Set(POL.filter(r=>r.kaynak==='leansys'&&!r.cikis_tar).map(r=>r.personel_guid||r.personel).filter(Boolean));
+      const pg=AYAR['aktif_per_guids'];
+      const perSet=pg?new Set(JSON.parse(pg)):null;
       const manGuids=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>r.personel_guid||r.personel).filter(Boolean));
-      AKTIF_GUIDS=lsGuids.size>0?new Set([...lsGuids,...manGuids]):null;
+      AKTIF_GUIDS=perSet&&perSet.size>0?new Set([...perSet,...manGuids]):null;
     }catch(e){AKTIF_GUIDS=null;}
     // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
     const _pm=new Map();
