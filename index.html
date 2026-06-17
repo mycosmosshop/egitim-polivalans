@@ -472,23 +472,31 @@
 
 <!-- Manuel Eğitim Modalı -->
 <div class="modal-bg" id="mEgtModal">
-  <div class="modal">
+  <div class="modal" style="max-width:560px;">
     <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>✏️ Manuel Eğitim Ekle</h3><button class="modal-x" onclick="closeMEgt()">✕</button></div>
     <div class="modal-body">
       <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
       <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" placeholder="Eğitim konusu"></div>
-      <div class="frow" style="grid-template-columns:2fr 1fr;">
-        <div class="fgroup"><label>Personel *</label><input list="mPersList" id="mEgtPersonel" placeholder="Ad Soyad"></div>
-        <div class="fgroup"><label>Tarih *</label><input type="date" id="mEgtTarih"></div>
-      </div>
       <div class="frow">
+        <div class="fgroup"><label>Tarih *</label><input type="date" id="mEgtTarih"></div>
         <div class="fgroup"><label>Tür</label><select id="mEgtTur"><option>İç Eğitim</option><option>Dış Eğitim</option><option>İşbaşı Eğitim</option><option>Online Eğitim</option></select></div>
         <div class="fgroup"><label>Süre (saat)</label><input type="number" id="mEgtSure" step="0.5" min="0"></div>
         <div class="fgroup"><label>Durum</label><select id="mEgtDurum"><option value="1">Gerçekleşti</option><option value="0">Planlandı</option></select></div>
       </div>
       <div class="frow" style="grid-template-columns:1fr 1fr;">
         <div class="fgroup"><label>Eğitici</label><input id="mEgtEgitici"></div>
-        <div class="fgroup"><label>Lokasyon</label><input list="mLokList" id="mEgtLok"></div>
+        <div class="fgroup"><label>Lokasyon (kayıt)</label><input list="mLokList" id="mEgtLok"></div>
+      </div>
+      <!-- Çoklu katılımcı seçimi -->
+      <div class="fgroup" style="margin-top:8px;">
+        <label>Katılımcılar * <span id="mEgtSelInfo" style="font-weight:400;color:#64748b;font-size:.85em;"></span></label>
+        <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+          <select id="mEgtLokF" onchange="_renderMEgtList()" style="flex:1;min-width:140px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.9em;"></select>
+          <input id="mEgtSearch" placeholder="İsim ara..." oninput="_renderMEgtList()" style="flex:1.5;min-width:120px;padding:5px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.9em;">
+          <button onclick="_mEgtSelAll()" id="mEgtSelAllBtn" style="padding:5px 10px;background:#ede9fe;color:#5b21b6;border:none;border-radius:6px;cursor:pointer;font-size:.85em;white-space:nowrap;">Tümünü Seç</button>
+        </div>
+        <div id="mEgtChips" style="display:flex;flex-wrap:wrap;gap:4px;min-height:24px;margin-bottom:6px;padding:4px 0;"></div>
+        <div id="mEgtPerList" style="max-height:180px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:2px;background:#fafafa;"></div>
       </div>
     </div>
     <div class="modal-foot">
@@ -785,30 +793,90 @@ async function kaydetMPol(){
     toast('✏️ Manuel yetkinlik eklendi','#16a34a',1800);
   }catch(e){toast('❌ Eklenemedi (kaynak kolonu eklendi mi?): '+e.message,'#dc2626',5000);}
 }
+let _mEgtSel=new Map(), _mEgtAllPers=[];
 function openMEgt(){
-  ['mEgtKonu','mEgtPersonel','mEgtSure','mEgtEgitici','mEgtLok'].forEach(i=>document.getElementById(i).value='');
-  document.getElementById('mEgtTarih').value=bugun();document.getElementById('mEgtTur').value='İç Eğitim';document.getElementById('mEgtDurum').value='1';
+  ['mEgtKonu','mEgtSure','mEgtEgitici','mEgtLok','mEgtSearch'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('mEgtTarih').value=bugun();
+  document.getElementById('mEgtTur').value='İç Eğitim';
+  document.getElementById('mEgtDurum').value='1';
+  _mEgtSel.clear();
+  // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
+  const seen=new Map();
+  POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||''});});
+  _mEgtAllPers=[...seen.values()].sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
+  const loks=[...new Set(_mEgtAllPers.map(p=>p.lokasyon).filter(Boolean))].sort();
+  document.getElementById('mEgtLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  _renderMEgtList(); _renderMEgtChips();
   document.getElementById('mEgtModal').classList.add('show');
 }
 function closeMEgt(){document.getElementById('mEgtModal').classList.remove('show');}
+function _renderMEgtList(){
+  const lok=document.getElementById('mEgtLokF').value;
+  const q=(document.getElementById('mEgtSearch').value||'').toLowerCase();
+  let list=_mEgtAllPers;
+  if(lok) list=list.filter(p=>p.lokasyon===lok);
+  if(q) list=list.filter(p=>p.personel.toLowerCase().includes(q));
+  const allVis=list.length>0&&list.every(p=>_mEgtSel.has(p.guid));
+  document.getElementById('mEgtSelAllBtn').textContent=allVis?'Seçimi Kaldır':'Tümünü Seç';
+  document.getElementById('mEgtPerList').innerHTML=list.length
+    ?list.map(p=>{const chk=_mEgtSel.has(p.guid);return`<label style="display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:pointer;border-radius:4px;background:${chk?'#f0fdf4':'transparent'};"><input type="checkbox" ${chk?'checked':''} onchange="_toggleMEgtPer('${p.guid}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"><span style="flex:1;font-size:.9em;">${esc(p.personel)}</span>${p.lokasyon?`<span style="font-size:.75em;color:#94a3b8;">${esc(p.lokasyon)}</span>`:''}</label>`;}).join('')
+    :'<div style="padding:8px 12px;color:#94a3b8;font-size:.85em;">Personel bulunamadı</div>';
+  document.getElementById('mEgtSelInfo').textContent=`· ${_mEgtSel.size} seçili · ${list.length} listeleniyor`;
+}
+function _toggleMEgtPer(guid,checked){
+  const p=_mEgtAllPers.find(x=>x.guid===guid); if(!p) return;
+  if(checked) _mEgtSel.set(guid,{personel:p.personel,lokasyon:p.lokasyon});
+  else _mEgtSel.delete(guid);
+  // lokasyon filtresi seçiliyse kayıt lokasyonunu otomatik doldur
+  const lokF=document.getElementById('mEgtLokF').value;
+  if(lokF&&!document.getElementById('mEgtLok').value) document.getElementById('mEgtLok').value=lokF;
+  _renderMEgtList(); _renderMEgtChips();
+}
+function _removeMEgtPer(guid){_mEgtSel.delete(guid);_renderMEgtList();_renderMEgtChips();}
+function _mEgtSelAll(){
+  const lok=document.getElementById('mEgtLokF').value;
+  const q=(document.getElementById('mEgtSearch').value||'').toLowerCase();
+  let list=_mEgtAllPers;
+  if(lok) list=list.filter(p=>p.lokasyon===lok);
+  if(q) list=list.filter(p=>p.personel.toLowerCase().includes(q));
+  const allVis=list.length>0&&list.every(p=>_mEgtSel.has(p.guid));
+  if(allVis) list.forEach(p=>_mEgtSel.delete(p.guid));
+  else list.forEach(p=>_mEgtSel.set(p.guid,{personel:p.personel,lokasyon:p.lokasyon}));
+  const lokF=document.getElementById('mEgtLokF').value;
+  if(lokF&&!document.getElementById('mEgtLok').value) document.getElementById('mEgtLok').value=lokF;
+  _renderMEgtList(); _renderMEgtChips();
+}
+function _renderMEgtChips(){
+  const arr=[..._mEgtSel.entries()];
+  document.getElementById('mEgtChips').innerHTML=arr.length
+    ?arr.map(([guid,v])=>`<span style="display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;border-radius:12px;padding:2px 8px 2px 10px;font-size:.8em;">${esc(v.personel)}<button onclick="_removeMEgtPer('${guid}')" style="background:none;border:none;cursor:pointer;color:#7c3aed;font-size:1em;padding:0 0 0 3px;line-height:1;">✕</button></span>`).join('')
+    :'<span style="color:#94a3b8;font-size:.8em;">Henüz kimse seçilmedi</span>';
+}
 async function kaydetMEgt(){
   const konu=document.getElementById('mEgtKonu').value.trim();
-  const personel=document.getElementById('mEgtPersonel').value.trim();
   const tarih=document.getElementById('mEgtTarih').value;
-  if(!konu||!personel||!tarih){toast('⚠ Konu, personel ve tarih gerekli','#d97706',2500);return;}
+  if(!konu||!tarih){toast('⚠ Konu ve tarih gerekli','#d97706',2500);return;}
+  if(_mEgtSel.size===0){toast('⚠ En az bir katılımcı seçin','#d97706',2500);return;}
   const ger=document.getElementById('mEgtDurum').value==='1';
-  const rec={uid:'man_'+Date.now(),plan_inckey:null,yil:tarih.slice(0,4),konu:konu,
-    turu:document.getElementById('mEgtTur').value,lokasyon:document.getElementById('mEgtLok').value.trim()||null,
-    plan_tarih:tarih,kayit_tarih:ger?tarih:null,sure:document.getElementById('mEgtSure').value?+document.getElementById('mEgtSure').value:null,
-    gerceklesme:ger?1:0,personel:personel,personel_guid:'man_'+slug(personel),egitici:document.getElementById('mEgtEgitici').value.trim()||null,
-    kaynak:'manuel'};
-  EGT.push(rec); EGT_BY_UID.set(rec.uid,rec); closeMEgt(); buildFilters(); renderEgt(); renderDash();
+  const turu=document.getElementById('mEgtTur').value;
+  const sure=document.getElementById('mEgtSure').value?+document.getElementById('mEgtSure').value:null;
+  const egitici=document.getElementById('mEgtEgitici').value.trim()||null;
+  const lokKayit=document.getElementById('mEgtLok').value.trim()||null;
+  const ts=Date.now();
+  const recs=[..._mEgtSel.entries()].map(([guid,v],i)=>({
+    uid:`man_${ts}_${i}_${guid.slice(-4)}`,plan_inckey:null,yil:tarih.slice(0,4),
+    konu,turu,lokasyon:lokKayit||v.lokasyon||null,
+    plan_tarih:tarih,kayit_tarih:ger?tarih:null,sure,gerceklesme:ger?1:0,
+    personel:v.personel,personel_guid:guid,egitici,kaynak:'manuel'
+  }));
+  recs.forEach(r=>{EGT.push(r);EGT_BY_UID.set(r.uid,r);});
+  closeMEgt(); buildFilters(); renderEgt(); renderDash();
   try{
     await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
       headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify([rec])});
-    toast('✏️ Manuel eğitim eklendi','#16a34a',1800);
-  }catch(e){toast('❌ Eklenemedi (kaynak kolonu eklendi mi?): '+e.message,'#dc2626',5000);}
+      body:JSON.stringify(recs)});
+    toast(`✏️ ${recs.length} kişi için eğitim eklendi`,'#16a34a',2000);
+  }catch(e){toast('❌ Eklenemedi: '+e.message,'#dc2626',5000);}
 }
 async function silManuelPol(guid,mk){
   if(!confirm('Bu manuel yetkinlik kaydı silinsin mi?'))return;
