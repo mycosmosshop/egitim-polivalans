@@ -145,7 +145,14 @@
     </div>
     <div class="chart-card">
       <h3>🚫 Eğitim Almayanlar <span class="muted" style="font-weight:400;">(polivalans personeli, seçili filtre)</span></h3>
-      <div style="max-height:320px;overflow:auto;"><table id="almayanTbl"><tbody id="almayanBody"></tbody></table></div>
+      <div class="filters" style="margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <select id="almDashLokF" onchange="renderAlmayanDash()" style="padding:4px 8px;border:1px solid #e2e8f0;border-radius:6px;font-size:.88em;"><option value="">Tüm Lokasyonlar</option></select>
+        <button class="btn" style="background:#ede9fe;color:#5b21b6;padding:4px 10px;font-size:.85em;" onclick="almDashSelAll()">Tümünü Seç</button>
+        <button class="btn" style="background:#f1f5f9;color:#475569;padding:4px 10px;font-size:.85em;" onclick="_almSel.clear();renderAlmayanDash()">Bırak</button>
+        <button class="btn" style="background:#1e7e4a;color:#fff;padding:4px 10px;font-size:.85em;" onclick="openAlmPlanDash()">🎓 Seçilenlere Plan</button>
+        <span class="muted" id="almDashSelInfo" style="font-size:.85em;"></span>
+      </div>
+      <div style="max-height:300px;overflow:auto;"><table id="almayanTbl"><thead><tr><th style="width:28px;"></th><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody id="almayanBody"></tbody></table></div>
       <button class="btn" style="background:#1e7e4a;color:#fff;margin-top:10px;" onclick="exportXlsx('almayan')">📊 Listeyi İndir</button>
     </div>
   </div>
@@ -1073,8 +1080,8 @@ function renderDash(){
 
   // --- Eğitim almayanlar: polivalans personeli (lokasyon filtreli) − eğitim alanlar ---
   let polP=POL.filter(r=>(!lok||r.lokasyon===lok));
-  const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,lok:r.lokasyon,dept:r.departman});});
-  const almayanlar=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>v);
+  const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{guid:k,ad:r.personel,lok:r.lokasyon,dept:r.departman});});
+  const almayanlar=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([,v])=>v);
 
   document.getElementById('dAdamSaat').textContent=Math.round(adamSaat).toLocaleString('tr');
   document.getElementById('dPlanSaat').textContent=Math.round(planSaat).toLocaleString('tr');
@@ -1177,11 +1184,14 @@ function renderDash(){
 
   // --- Almayanlar listesi ---
   almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
-  window._almayan=almayanlar;
-  document.getElementById('almayanBody').innerHTML=almayanlar.slice(0,500).map(v=>
-    `<tr><td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`).join('')
-    +(almayanlar.length>500?`<tr><td colspan="3" class="muted">… ${almayanlar.length-500} kişi daha</td></tr>`:'')
-    ||'<tr><td class="muted">Herkes eğitim almış 🎉</td></tr>';
+  window._almayan=almayanlar; window._almDash=almayanlar;
+  // Lokasyon filtresi doldur
+  const almLoks=[...new Set(almayanlar.map(v=>v.lok).filter(Boolean))].sort();
+  const almLokF=document.getElementById('almDashLokF');
+  const almLokPrev=almLokF.value;
+  almLokF.innerHTML='<option value="">Tüm Lokasyonlar</option>'+almLoks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  if(almLoks.includes(almLokPrev)) almLokF.value=almLokPrev;
+  renderAlmayanDash();
 }
 
 function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
@@ -1609,9 +1619,37 @@ function topluHedefEgitimAc(){
 }
 
 // ===================== Eğitim Almayanlara Toplu Planlama =====================
-function toggleAlmSel(guid,on){if(on)_almSel.add(guid);else _almSel.delete(guid);
-  const i=document.getElementById('almSelInfo');if(i)i.textContent=_almSel.size?`${_almSel.size} seçili`:'';}
+function _almSelInfoGuncelle(){
+  const n=_almSel.size;
+  const i=document.getElementById('almSelInfo'); if(i)i.textContent=n?`${n} seçili`:'';
+  const j=document.getElementById('almDashSelInfo'); if(j)j.textContent=n?`${n} kişi seçili`:'';
+}
+function toggleAlmSel(guid,on){if(on)_almSel.add(guid);else _almSel.delete(guid);_almSelInfoGuncelle();}
 function almSelAll(){(window._almData||[]).forEach(p=>_almSel.add(p.guid));renderKonuKart();}
+// Dashboard almayanlar tablosu (checkbox + lokasyon filtreli)
+function renderAlmayanDash(){
+  const lok=document.getElementById('almDashLokF').value;
+  const list=(window._almDash||[]).filter(v=>!lok||v.lok===lok);
+  document.getElementById('almayanBody').innerHTML=list.slice(0,500).map(v=>{
+    const chk=_almSel.has(v.guid)?'checked':'';
+    return`<tr><td><input type="checkbox" ${chk} onchange="toggleAlmSel('${esc(v.guid)}',this.checked)" style="cursor:pointer;accent-color:#1e7e4a;"></td><td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`;
+  }).join('')+(list.length>500?`<tr><td colspan="4" class="muted">… ${list.length-500} kişi daha</td></tr>`:'')
+  ||'<tr><td colspan="4" class="muted">Herkes eğitim almış 🎉</td></tr>';
+  _almSelInfoGuncelle();
+}
+function almDashSelAll(){
+  const lok=document.getElementById('almDashLokF').value;
+  const list=(window._almDash||[]).filter(v=>!lok||v.lok===lok);
+  const allSel=list.length>0&&list.every(v=>_almSel.has(v.guid));
+  if(allSel) list.forEach(v=>_almSel.delete(v.guid));
+  else list.forEach(v=>_almSel.add(v.guid));
+  renderAlmayanDash();
+}
+function openAlmPlanDash(){
+  if(!_almSel.size){toast('⚠ Önce personel seçin','#d97706',2200);return;}
+  window._almData=window._almDash||[]; window._almKonu='';
+  openAlmPlan();
+}
 function openAlmPlan(){
   if(!_almSel.size){toast('⚠ Önce personel seçin','#d97706',2200);return;}
   _planAlmayan=true; _planBulk=false; _planKey=null;
