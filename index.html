@@ -315,6 +315,7 @@
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('egtMenu')">⚙️ İşlemler ▾</button>
           <div class="dropdown-menu" id="egtMenu">
             <button onclick="topluOtoDeger()">🎯 Otomatik Değerlendir</button>
+            <button onclick="topluTamamla()">✅ Görünenleri Tamamla</button>
             <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
             <button onclick="openKopya()">🔄 Önceki Yılı Kopyala</button>
             <hr>
@@ -1919,6 +1920,32 @@ async function kaydetKpiPol(){
   catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
 }
 
+// ===================== GERÇ. TARİH INLINE EDIT =====================
+async function saveGercTarih(uid,tarih){
+  const r=EGT_BY_UID.get(uid);if(!r)return;
+  r.kayit_tarih=tarih||null;
+  r.gerceklesme=tarih?1:0;
+  renderEgt();renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'PATCH',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({kayit_tarih:tarih||null,gerceklesme:tarih?1:0})});
+    toast('📅 Gerçekleşme tarihi kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',4000);}
+}
+// ===================== TOPLU TAMAMLA (görünen bekleyenleri) =====================
+async function topluTamamla(){
+  const aday=egtFiltered().filter(r=>!r._plan&&!r.gerceklesme);
+  if(!aday.length){toast('Tamamlanacak bekleyen eğitim yok','#d97706',2500);return;}
+  if(!confirm(`Filtrede görünen ${aday.length} bekleyen eğitim, plan tarihleri kullanılarak "Gerçekleşti" olarak işaretlenecek. Devam?`))return;
+  const today=bugun();
+  aday.forEach(r=>{r.gerceklesme=1;r.kayit_tarih=r.plan_tarih||today;});
+  renderEgt();renderDash();
+  try{
+    await _batchUpsert('egt_egitim',aday.map(r=>({uid:r.uid,gerceklesme:1,kayit_tarih:r.kayit_tarih})),'uid');
+    toast(`✅ ${aday.length} eğitim tamamlandı olarak işaretlendi`,'#16a34a',2500);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
 // ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
 async function topluOtoDeger(){
   const aday=egtFiltered().filter(r=>!r._plan&&r.gerceklesme&&!DEGER.has(r.uid));
@@ -2013,10 +2040,11 @@ function renderEgt(){
       }
     }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
     if(d&&d.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(d.deger_tarihi)}</span>`;
-    const manRozE=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelEgt('${esc(r.uid)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
+    const manRozE=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelEgt('${esc(r.uid)}')" title="Manuel kayıt — sil">🗑</span>`:'';
+    const manDot=r.kaynak==='manuel'?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
     return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
-    <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${esc(r.konu)}</b>${manRozE}</td><td class="muted">${esc(r.turu)}</td>
-    <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">${esc(r.kayit_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
+    <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b>${manRozE}</td><td class="muted">${esc(r.turu)}</td>
+    <td class="muted">${esc(r.plan_tarih||'')}</td><td><input type="date" value="${r.kayit_tarih||''}" onchange="saveGercTarih('${escAttr(r.uid)}',this.value)" style="border:none;background:transparent;font-size:.83em;color:#64748b;cursor:pointer;padding:0;width:110px;" title="Gerçekleşme tarihini düzenle"></td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
     <td>${r.not_sonra!=null?esc(r.not_sonra):''}${(r.not_once!=null&&r.not_once!=='')?` <span class="muted">(ön:${esc(r.not_once)})</span>`:''}</td>
