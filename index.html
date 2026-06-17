@@ -532,7 +532,7 @@
     <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>✏️ Manuel Eğitim Ekle</h3><button class="modal-x" onclick="closeMEgt()">✕</button></div>
     <div class="modal-body">
       <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
-      <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" placeholder="Eğitim konusu"></div>
+      <div class="fgroup"><label>Eğitim Konusu *</label><input id="mEgtKonu" list="mEgtKonuList" placeholder="Listeden seçin veya yazın" autocomplete="off"><datalist id="mEgtKonuList"></datalist></div>
       <div class="frow">
         <div class="fgroup"><label>Tarih *</label><input type="date" id="mEgtTarih"></div>
         <div class="fgroup"><label>Tür</label><select id="mEgtTur"><option>İç Eğitim</option><option>Dış Eğitim</option><option>İşbaşı Eğitim</option><option>Online Eğitim</option></select></div>
@@ -897,6 +897,9 @@ function openMEgt(){
   document.getElementById('mEgtTur').value='İç Eğitim';
   document.getElementById('mEgtDurum').value='1';
   _mEgtSel.clear();
+  // Mevcut eğitim konularını datalist'e doldur
+  const konular=[...new Set(EGT.filter(r=>r.konu).map(r=>r.konu))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('mEgtKonuList').innerHTML=konular.map(k=>`<option value="${esc(k)}">`).join('');
   // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
   const seen=new Map();
   POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||'',cikis_tar:r.cikis_tar||null});});
