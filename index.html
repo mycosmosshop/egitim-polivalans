@@ -2421,7 +2421,9 @@ function doGenerateTutanak(){
           <td class=cb style="width:14%"></td>
         </tr>`;
       }
-      pages+=`<div class=page>${headerHtml(f,ci+1,totalPages)}
+      const isLastPage=(ci===chunks.length-1);
+      const pgBreak=isLastPage?'page-break-after:avoid;break-after:avoid;':'page-break-after:always;break-after:page;';
+      pages+=`<div style="width:197mm;margin:0 auto;padding:8mm 8mm 4mm;${pgBreak}">${headerHtml(f,ci+1,totalPages)}
         <table style="width:100%;border-collapse:collapse">
           <tr style="background:#f0f0f0">
             <th class=cb style="width:4%;font-size:8.5pt">NO</th><th class=cb style="width:28%;font-size:8.5pt">ADI SOYADI</th><th class=cb style="width:14%;font-size:8.5pt">İMZA</th>
@@ -2434,23 +2436,17 @@ function doGenerateTutanak(){
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FR17 Eğitim Tutanağı</title>
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
+      html,body{height:auto}
       body{font-family:Arial,sans-serif;font-size:9pt;background:#fff}
-      .page{width:197mm;margin:0 auto;padding:8mm 8mm 4mm}
-      .page:not(:last-child){page-break-after:always;break-after:page}
       table{border-collapse:collapse;width:100%}
       td,th{padding:1px 4px}
       .bb{border-bottom:1px solid #000}
       .cb{border:1px solid #000}
-      @media print{
-        @page{size:A4;margin:0}
-        .page{margin:0;width:100%;padding:7mm 8mm 4mm}
-        .page:not(:last-child){page-break-after:always;break-after:page}
-      }
-    </style></head><body>${pages}</body></html>`;
+      @media print{@page{size:A4 portrait;margin:0}body{width:210mm}}
+    </style></head><body>${pages}<script>window.onload=function(){setTimeout(function(){window.print();},300);}<\/script></body></html>`;
   const w=window.open('','_blank','width=900,height=950');
   if(!w){toast('Popup engellendi — tarayıcı izin verin','#dc2626',4000);return;}
   w.document.write(html);w.document.close();
-  setTimeout(()=>w.print(),600);
 }
 async function topluEgtSil(){
   const uids=[..._egtSel];
