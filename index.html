@@ -1431,7 +1431,7 @@ function renderPersonelKart(){
 
 // ===================== PERSONEL EĞİTİM PLANLAMA =====================
 let _perPlanAd='', _perPlanGuid='', _perPlanLok='', _perPlanSel=new Set(), _perAlınmamisList=[];
-let _perPolSel=new Set(), _perAlınmamisPolList=[], _perPolAd='', _perPolGuid='';
+let _perPolSel=new Set(), _perAlınmamisPolList=[], _perPolAd='', _perPolGuid='', _perPolLok='', _perPolDept='';
 
 function _buildAlınmamisEgt(ad, guid, polRec){
   const tamamlandi=new Set(EGT.filter(r=>r.gerceklesme&&((guid&&r.personel_guid===guid)||r.personel===ad)).map(r=>r.konu));
@@ -1468,7 +1468,7 @@ function _buildAlınmamisPol(ad, guid, pol){
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <b style="font-size:.9em;white-space:nowrap;">📋 Eklenebilir Makine/Konular</b>
       <span class="muted" id="perPolSayac" style="font-size:.82em;white-space:nowrap;">(${_perAlınmamisPolList.length})</span>
-      <button onclick="openPerPolEkle('${escAttr(ad)}','${escAttr(guid||'')}')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">🧩 Seçilenleri Ekle</button>
+      <button onclick="openPerPolEkle('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr(pol[0].lokasyon||'')}','${escAttr(pol[0].departman||'')}')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">🧩 Seçilenleri Ekle</button>
       <button onclick="perPolHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.82em;white-space:nowrap;">Tümünü Seç</button>
       <input id="perPolAra" placeholder="🔍 Makine ara..." oninput="filtrePerPolList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:.85em;flex:1;min-width:100px;">
     </div>
@@ -1552,9 +1552,9 @@ function perPolHepsiniSec(){
   document.getElementById('perPolSayac').textContent=
     `(${_perAlınmamisPolList.length} konu · ${_perPolSel.size} seçili)`;
 }
-function openPerPolEkle(ad,guid){
+function openPerPolEkle(ad,guid,lok,dept){
   if(!_perPolSel.size){toast('En az bir makine/konu seçin','#d97706',2000);return;}
-  _perPolAd=ad; _perPolGuid=guid;
+  _perPolAd=ad; _perPolGuid=guid; _perPolLok=lok||''; _perPolDept=dept||'';
   document.getElementById('perPolEkleInfo').textContent=`${_perPolSel.size} makine/konu → ${ad}`;
   document.getElementById('perPolYet').value='1';
   document.getElementById('perPolTarih').value=bugun();
@@ -1569,7 +1569,7 @@ async function savePerPolEkle(){
     return {pol_inckey:-(Date.now()+idx),personel:_perPolAd,personel_guid:_perPolGuid||null,
       makine_adi:m.ad,makine_kodu:kod,makinegrup_adi:m.grup||null,
       yetenek:yet,guncel:1,tarih:tarih,
-      departman:null,lokasyon:null,proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
+      departman:_perPolDept||null,lokasyon:_perPolLok||null,proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
   });
   recs.forEach(r=>{POL.push(r);POL_BY_KEY.set((r.personel_guid||'')+'|'+r.makine_kodu,r);});
   document.getElementById('perPolEkleModal').style.display='none';
