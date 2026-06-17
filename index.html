@@ -1411,7 +1411,10 @@ function _buildKonuDatalist(){
     const ks=[...new Set(base.map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
     dl.innerHTML=ks.map(k=>`<option value="${esc(k)}">`).join('');
   }else{
-    const ms=[...new Set(POL.filter(r=>!lf||r.lokasyon===lf).map(r=>r.makine_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    const msSet=new Set(POL.filter(r=>!lf||r.lokasyon===lf).map(r=>r.makine_adi).filter(Boolean));
+    try{const yeni=JSON.parse(localStorage.getItem('_yeniMakineler')||'[]');
+      yeni.forEach(m=>{if(m.ad&&(!lf||!m.lok||(m.lok||'').toUpperCase()===(lf||'').toUpperCase()))msSet.add(m.ad);});}catch(e){}
+    const ms=[...msSet].sort((a,b)=>a.localeCompare(b,'tr'));
     dl.innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
   }
 }
@@ -1498,6 +1501,9 @@ function renderKonuEgitim(konu,det){
 function renderKonuMakine(makine,det){
   const lf=document.getElementById('konuLokF').value;
   const kayitlar=POL.filter(r=>r.makine_adi===makine&&(!lf||r.lokasyon===lf));
+  // localStorage'dan eklenen makine bilgisi (POL'da yoksa meta göster)
+  let yeniMeta=null;
+  try{const yn=JSON.parse(localStorage.getItem('_yeniMakineler')||'[]');yeniMeta=yn.find(m=>m.ad===makine)||null;}catch(e){}
   const yetC=[0,0,0,0]; kayitlar.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
   document.getElementById('konuInfo').textContent=`${kayitlar.length} yetkin personel`;
   const rows=[...kayitlar].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.personel).localeCompare(String(b.personel),'tr')).map(r=>{
@@ -1506,6 +1512,15 @@ function renderKonuMakine(makine,det){
       <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
       <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td></tr>`;
   }).join('');
+  const yeniMetaHtml=(!kayitlar.length&&yeniMeta)?`<div class="card" style="margin-top:12px;color:#6d7a8a;">
+    <b>📋 Katalog Bilgisi</b><br>
+    ${yeniMeta.kodu?`Kod: <b>${esc(yeniMeta.kodu)}</b> &nbsp;`:''}
+    ${yeniMeta.grup?`Grup: <b>${esc(yeniMeta.grup)}</b> &nbsp;`:''}
+    ${yeniMeta.proses?`Proses: <b>${esc(yeniMeta.proses)}</b> &nbsp;`:''}
+    ${yeniMeta.dept?`Departman: <b>${esc(yeniMeta.dept)}</b> &nbsp;`:''}
+    ${yeniMeta.lok?`Lokasyon: <b>${esc(yeniMeta.lok)}</b>`:''}
+    <br><span class="muted" style="font-size:.82em;">Bu makine/konu henüz polivalans tablosuna eklenmemiş — Manuel Yetkinlik Ekle ile personel atayabilirsiniz.</span>
+  </div>`:'';
   det.innerHTML=`
     <div class="stats">
       <div class="stat"><div class="v">${kayitlar.length}</div><div class="l">Yetkin Personel</div></div>
@@ -1514,8 +1529,9 @@ function renderKonuMakine(makine,det){
       <div class="stat amber"><div class="v">${yetC[1]}</div><div class="l">Sv2 Gelişmekte</div></div>
       <div class="stat alt"><div class="v">${yetC[0]}</div><div class="l">Sv1 Başlangıç</div></div>
     </div>
+    ${yeniMetaHtml}
     <div class="chart-card"><h3>👥 ${esc(makine)} — Yetkin Personeller</h3>
-      <div class="table-wrap" style="max-height:520px;"><table><thead><tr><th>Personel</th><th>Departman</th><th>Lokasyon</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      <div class="table-wrap" style="max-height:520px;"><table><thead><tr><th>Personel</th><th>Departman</th><th>Lokasyon</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="muted" style="text-align:center;">Henüz kayıt yok</td></tr>'}</tbody></table></div></div>`;
 }
 
 // ===================== DASHBOARD =====================
