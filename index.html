@@ -311,6 +311,7 @@
           <option value="tekrar">🔁 Tekrar Eğitim Planlı</option>
         </select>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('egt')">📊 Excel</button>
+        <button id="egtGrupBtn" class="btn" style="background:#e2e8f0;color:#334155;" onclick="_egtGruplu=!_egtGruplu;_egtAcikGruplar.clear();document.getElementById('egtGrupBtn').textContent=_egtGruplu?'☰ Detaylı':'▤ Gruplu';renderEgt()">☰ Detaylı</button>
         <div class="dropdown admin-only">
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('egtMenu')">⚙️ İşlemler ▾</button>
           <div class="dropdown-menu" id="egtMenu">
@@ -1978,6 +1979,9 @@ async function saveGercTarih(uid,tarih){
 }
 // ===================== TOPLU TAMAMLA — sadece tarihi geçmiş/bugün olanlar =====================
 let _egtUndoBuf=null;
+let _egtGruplu=true;          // default: gruplu görünüm
+let _egtAcikGruplar=new Set(); // açık grup anahtarları
+function toggleEgtGrup(gk){if(_egtAcikGruplar.has(gk))_egtAcikGruplar.delete(gk);else _egtAcikGruplar.add(gk);renderEgt();}
 async function topluTamamla(){
   const today=bugun();
   const aday=egtFiltered().filter(r=>!r._plan&&!r.gerceklesme&&r.plan_tarih&&r.plan_tarih<=today);
@@ -2129,6 +2133,32 @@ function egtFiltered(){
   });
 }
 function sortEgt(k){egtSort.dir=egtSort.k===k?-egtSort.dir:1;egtSort.k=k;renderEgt();}
+function _egtRowDetay(r){
+  if(r._plan){
+    return `<tr style="background:#eff6ff;">
+      <td></td><td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>🎓 ${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+      <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">—</td><td>${r.sure!=null?esc(r.sure):''}</td>
+      <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici||'')}</td>
+      <td><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 Planlandı</span></td>
+      <td>—</td><td class="muted">${esc(r.turu||'')}</td><td>${r._degerUid?`<button class="btn-dgr" onclick="openDeger('${esc(r._degerUid)}')">Düzenle</button>`:(r.makine_kodu?`<button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button>`:`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="silPlanById('${esc(r._planKey)}')">🗑 Sil</button>`)}</td></tr>`;
+  }
+  const dv=DEGER.get(r.uid);
+  let dgrBtn;
+  if(dv){const s=dv.etkinlik_sonuc;if(s==='Etkili Değil')dgrBtn=`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="openDeger('${esc(r.uid)}')">⚠ Etkili Değil${dv.tekrar_egitim_tarihi?' → '+esc(dv.tekrar_egitim_tarihi):''}</button>`;else if(s==='Kısmen Etkili')dgrBtn=`<button class="btn-dgr" style="background:#fef3c7;color:#92400e;" onclick="openDeger('${esc(r.uid)}')">◐ Kısmen</button>`;else dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;}
+  else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+  if(dv&&dv.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(dv.deger_tarihi)}</span>`;
+  const isManuel=r.kaynak==='manuel';
+  const chkCell=isManuel?`<td><input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"></td>`:'<td></td>';
+  const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
+  return `<tr${isManuel?' style="background:#faf5ff;"':''}>
+  ${chkCell}<td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+  <td class="muted">${esc(r.plan_tarih||'')}</td><td><input type="date" value="${r.kayit_tarih||''}" onchange="saveGercTarih('${escAttr(r.uid)}',this.value)" style="border:none;background:transparent;font-size:.83em;color:#64748b;cursor:pointer;padding:0;width:110px;" title="Gerçekleşme tarihini düzenle"></td><td>${r.sure!=null?esc(r.sure):''}</td>
+  <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
+  <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
+  <td>${r.not_sonra!=null?esc(r.not_sonra):''}${(r.not_once!=null&&r.not_once!=='')?` <span class="muted">(ön:${esc(r.not_once)})</span>`:''}</td>
+  <td>${esc(r.degerlendirme||'')}${(r.onceki_olcum||r.yeni_olcum)?`<br><span class="muted" style="font-size:.85em;">ölçüm: ${esc(r.onceki_olcum||'?')}→${esc(r.yeni_olcum||'?')}</span>`:''}</td>
+  <td>${dgrBtn}</td></tr>`;
+}
 function renderEgt(){
   let rows=egtFiltered();const k=egtSort.k,d=egtSort.dir;
   rows.sort((a,b)=>{let x=a[k]??'',y=b[k]??'';if(k==='not_sonra'||k==='gerceklesme'||k==='sure'){x=+x||0;y=+y||0;return (x-y)*d;}return String(x).localeCompare(String(y),'tr')*d;});
@@ -2136,7 +2166,64 @@ function renderEgt(){
   document.getElementById('egtOk').textContent=rows.filter(r=>r.gerceklesme).length;
   document.getElementById('egtKonu').textContent=new Set(rows.map(r=>r.konu)).size;
   const cap=rows.slice(0,3000);
-  document.getElementById('egtBody').innerHTML=cap.map(r=>{
+
+  // ── GRUPLU GÖRÜNÜM ──
+  if(_egtGruplu){
+    const grupler=new Map();
+    cap.forEach(r=>{
+      if(r._plan){grupler.set('__plan__'+(r._planKey||r.uid),[r]);return;}
+      const gk=`${r.yil||''}|${r.lokasyon||''}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}`;
+      if(!grupler.has(gk))grupler.set(gk,[]);
+      grupler.get(gk).push(r);
+    });
+    let html='';
+    grupler.forEach((rs,gk)=>{
+      if(gk.startsWith('__plan__')){html+=_egtRowDetay(rs[0]);return;}
+      const f=rs[0],acik=_egtAcikGruplar.has(gk);
+      const gerN=rs.filter(r=>r.gerceklesme).length;
+      const isManuel=rs.some(r=>r.kaynak==='manuel');
+      const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;">●</span>':'';
+      const durum=gerN===rs.length?'<span class="badge b-ok">Tümü Gerçekleşti</span>':gerN>0?`<span class="badge" style="background:#fef3c7;color:#92400e;">${gerN}/${rs.length}</span>`:'<span class="badge b-no">Bekliyor</span>';
+      html+=`<tr onclick="toggleEgtGrup('${escAttr(gk)}')" style="cursor:pointer;background:#f1f5f9;border-top:2px solid #cbd5e1;">
+        <td style="text-align:center;color:#64748b;font-size:.9em;">${acik?'▼':'▶'}</td>
+        <td>${esc(f.yil||'')}</td><td class="muted">${esc(f.lokasyon||'')}</td>
+        <td><b>${manDot}${esc(f.konu)}</b></td>
+        <td class="muted">${esc(f.turu||'')}</td>
+        <td class="muted">${esc(f.plan_tarih||'')}</td>
+        <td class="muted" style="font-size:.82em;">${gerN}/${rs.length} gerç.</td>
+        <td>${f.sure!=null?esc(f.sure):''}</td>
+        <td style="font-weight:600;color:#1e7e4a;">${rs.length} kişi</td>
+        <td class="muted">${esc(f.egitici||'')}</td>
+        <td>${durum}</td><td></td><td></td><td></td>
+      </tr>`;
+      if(acik) rs.forEach(r=>{
+        const dv=DEGER.get(r.uid);
+        let dgrBtn;
+        if(dv){const s=dv.etkinlik_sonuc;if(s==='Etkili Değil')dgrBtn=`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="openDeger('${esc(r.uid)}')">⚠ Etkili Değil</button>`;else if(s==='Kısmen Etkili')dgrBtn=`<button class="btn-dgr" style="background:#fef3c7;color:#92400e;" onclick="openDeger('${esc(r.uid)}')">◐ Kısmen</button>`;else dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;}
+        else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+        const iM=r.kaynak==='manuel';
+        const dot=iM?'<span style="color:#7c3aed;font-size:.75em;margin-right:3px;">●</span>':'';
+        const chk=iM?`<input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;">`:'';
+        html+=`<tr style="background:${iM?'#faf5ff':'#fff'};border-left:4px solid #e2e8f0;">
+          <td style="padding-left:18px;">${chk}</td><td></td><td></td>
+          <td style="padding-left:18px;color:#334155;">${dot}${esc(r.personel)}</td>
+          <td></td><td></td>
+          <td onclick="event.stopPropagation()"><input type="date" value="${r.kayit_tarih||''}" onchange="saveGercTarih('${escAttr(r.uid)}',this.value)" style="border:none;background:transparent;font-size:.83em;color:#64748b;cursor:pointer;padding:0;width:110px;"></td>
+          <td></td><td></td><td></td>
+          <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
+          <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td>
+          <td>${esc(r.degerlendirme||'')}</td>
+          <td onclick="event.stopPropagation()">${dgrBtn}</td>
+        </tr>`;
+      });
+    });
+    document.getElementById('egtBody').innerHTML=html+(rows.length>3000?`<tr><td colspan="14" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    return;
+  }
+
+  // ── DETAYLI GÖRÜNÜM (eski) ──
+  const cap2=cap;
+  document.getElementById('egtBody').innerHTML=cap2.map(r=>{
     if(r._plan){
       return `<tr style="background:#eff6ff;">
         <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>🎓 ${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
