@@ -378,10 +378,15 @@
           <option value="egitim">📚 Eğitim Konusu</option>
           <option value="makine">🏭 Makine / Proses</option>
         </select>
-        <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="renderKonuKart()" style="min-width:260px;">
+        <input list="konuDatalist" id="konuSec" placeholder="Seç..." oninput="renderKonuKart()" onchange="renderKonuKart()" style="min-width:260px;">
         <datalist id="konuDatalist"></datalist>
         <select id="konuLokF" onchange="renderKonuKart()"><option value="">Tüm Lokasyonlar</option></select>
         <select id="konuYilF" onchange="renderKonuKart()"><option value="">Tüm Yıllar</option></select>
+        <select id="konuDurum" onchange="renderKonuKart()">
+          <option value="">Tüm Durum</option>
+          <option value="1">✅ Gerçekleşen</option>
+          <option value="0">⏳ Bekleyen / Planlanmış</option>
+        </select>
         <span class="muted" id="konuInfo"></span>
       </div>
     </div>
@@ -1161,7 +1166,10 @@ function renderKonuKart(){
 }
 function renderKonuEgitim(konu,det){
   const lf=document.getElementById('konuLokF').value, yf=document.getElementById('konuYilF').value;
-  const kayitlar=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
+  const dur=document.getElementById('konuDurum').value;
+  let kayitlar=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
+  if(dur==='1') kayitlar=kayitlar.filter(r=>r.gerceklesme);
+  else if(dur==='0') kayitlar=kayitlar.filter(r=>!r.gerceklesme);
   const ger=kayitlar.filter(r=>r.gerceklesme);
   const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
   const notlar=ger.map(r=>r.not_sonra).filter(v=>v!=null&&v!=='');
