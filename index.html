@@ -460,6 +460,33 @@
   </div>
 </div>
 
+<!-- Personel Polivalans Toplu Ekleme Modalı -->
+<div class="modal-bg" id="perPolEkleModal" style="display:none;">
+  <div class="modal" style="max-width:400px;">
+    <div class="modal-head"><h3>🧩 Yetkinlik Ekle</h3><button class="modal-x" onclick="document.getElementById('perPolEkleModal').style.display='none'">✕</button></div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <p id="perPolEkleInfo" style="margin:0;font-size:.88em;color:#64748b;"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Yetenek Seviyesi *
+          <select id="perPolYet" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;">
+            <option value="1">1 — Başlangıç</option>
+            <option value="2">2 — Gelişmekte</option>
+            <option value="3">3 — Yetkin</option>
+            <option value="4">4 — Uzman</option>
+          </select>
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Değerlendirme Tarihi
+          <input id="perPolTarih" type="date" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;">
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="document.getElementById('perPolEkleModal').style.display='none'" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:7px 18px;cursor:pointer;">İptal</button>
+        <button onclick="savePerPolEkle()" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600;">💾 Ekle</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Personel Eğitim Planlama Modalı -->
 <div class="modal-bg" id="perPlanModal" style="display:none;">
   <div class="modal" style="max-width:460px;">
@@ -1260,11 +1287,9 @@ function renderPersonelKart(){
   if(yf)egt=egt.filter(r=>r.yil===yf);
   const egtGer=egt.filter(r=>r.gerceklesme);
   document.getElementById('persInfo').textContent=`${pol.length} yetkinlik · ${egtGer.length} eğitim`;
-  // yetkinlik seviye dağılımı
   const yetC=[0,0,0,0]; pol.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
   const gapList=pol.filter(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));return h&&(+r.yetenek||0)<h;});
   const adamSaat=egtGer.reduce((s,r)=>s+(+r.sure||0),0);
-  // yetkinlik tablosu
   const polSorted=[...pol].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.makine_adi).localeCompare(String(b.makine_adi),'tr'));
   const yetRows=polSorted.map(r=>{
     const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const h=HEDEF.get(key)||''; const m=+r.yetenek||0; const gap=h?h-m:0;
@@ -1272,13 +1297,14 @@ function renderPersonelKart(){
       <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
       <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td></tr>`;
   }).join('');
-  // eğitim geçmişi
   const egtSorted=[...egt].sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
   const egtRows=egtSorted.slice(0,200).map(r=>`<tr>
     <td>${esc(r.yil||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu||'')}</td>
     <td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">✓</span>':'<span class="badge b-no">—</span>'}</td>
     <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td></tr>`).join('');
+  const alınmamisEgtHtml=_buildAlınmamisEgt(ad,guid,pol[0]);
+  const alınmamisPolHtml=_buildAlınmamisPol(ad,guid,pol);
   det.innerHTML=`
     <div class="stats">
       <div class="stat"><div class="v">${esc(info.departman||'-')}</div><div class="l">Departman</div></div>
@@ -1288,52 +1314,77 @@ function renderPersonelKart(){
       <div class="stat alt"><div class="v">${gapList.length}</div><div class="l">Eğitim Gereken</div></div>
     </div>
     <div class="grid2">
-      <div class="chart-card">
+      <div class="chart-card" style="overflow:hidden;">
         <h3>🧩 Yetkinlikler <span class="muted" style="font-weight:400;">(${pol.length}) · Sv1:${yetC[0]} Sv2:${yetC[1]} Sv3:${yetC[2]} Sv4:${yetC[3]}</span></h3>
-        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${yetRows}</tbody></table></div>
+        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${yetRows}</tbody></table></div>
+        ${alınmamisPolHtml}
       </div>
-      <div class="chart-card">
+      <div class="chart-card" style="overflow:hidden;">
         <h3>📚 Eğitim Geçmişi <span class="muted" style="font-weight:400;">(${egt.length})</span></h3>
-        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Yıl</th><th>Konu</th><th>Tür</th><th>Tarih</th><th>Süre</th><th>Gerç.</th><th>Not</th></tr></thead><tbody>${egtRows||'<tr><td colspan="7" class="muted">Eğitim kaydı yok</td></tr>'}</tbody></table></div>
+        <div class="table-wrap" style="max-height:280px;"><table><thead><tr><th>Yıl</th><th>Konu</th><th>Tür</th><th>Tarih</th><th>Süre</th><th>Gerç.</th><th>Not</th></tr></thead><tbody>${egtRows||'<tr><td colspan="7" class="muted">Eğitim kaydı yok</td></tr>'}</tbody></table></div>
+        ${alınmamisEgtHtml}
       </div>
     </div>
-    ${_renderAlınmamisEgt(ad, guid, pol[0])}
   `;
-  setTimeout(filtrePerAlList, 0);
+  setTimeout(filtrePerAlList,0);
+  setTimeout(filtrePerPolList,0);
 }
 
 // ===================== PERSONEL EĞİTİM PLANLAMA =====================
 let _perPlanAd='', _perPlanGuid='', _perPlanLok='', _perPlanSel=new Set(), _perAlınmamisList=[];
+let _perPolSel=new Set(), _perAlınmamisPolList=[], _perPolAd='', _perPolGuid='';
 
-function _renderAlınmamisEgt(ad, guid, polRec){
-  // Personelin tamamladığı eğitim konuları
+function _buildAlınmamisEgt(ad, guid, polRec){
   const tamamlandi=new Set(EGT.filter(r=>r.gerceklesme&&((guid&&r.personel_guid===guid)||r.personel===ad)).map(r=>r.konu));
-  // Tüm katalogdan benzersiz konular (tür ve süreyi de al)
   const konuMap=new Map();
   EGT.forEach(r=>{if(r.konu&&!konuMap.has(r.konu))konuMap.set(r.konu,{konu:r.konu,turu:r.turu||'',sure:r.sure||''});});
-  // Sadece alınmayanlar
   _perAlınmamisList=[...konuMap.values()].filter(k=>!tamamlandi.has(k.konu)).sort((a,b)=>a.konu.localeCompare(b.konu,'tr'));
   _perPlanSel.clear();
-  if(!_perAlınmamisList.length)return '<div class="chart-card" style="margin-top:12px;"><h3>✅ Tüm eğitimler tamamlandı</h3></div>';
-  return `<div class="chart-card" style="margin-top:12px;">
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
-      <h3>📋 Alınmamış Eğitimler <span class="muted" style="font-weight:400;" id="perAlSayac">(${_perAlınmamisList.length} konu)</span></h3>
-      <button onclick="openPerPlan('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr(polRec.lokasyon||'')}')" style="background:#1e7e4a;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:.88em;">📅 Seçilenleri Planla</button>
-      <button onclick="perPlanHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:5px 12px;cursor:pointer;font-size:.88em;">Tümünü Seç</button>
-      <input id="perAlAra" placeholder="🔍 Eğitim ara..." oninput="filtrePerAlList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:5px 10px;font-size:.9em;min-width:200px;flex:1;">
+  if(!_perAlınmamisList.length)return '<div style="margin-top:10px;padding:8px 0;color:#16a34a;font-size:.88em;border-top:1px solid #e2e8f0;">✅ Tüm eğitimler tamamlandı</div>';
+  return `<div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <b style="font-size:.9em;white-space:nowrap;">📋 Alınmamış Eğitimler</b>
+      <span class="muted" id="perAlSayac" style="font-size:.82em;white-space:nowrap;">(${_perAlınmamisList.length} konu)</span>
+      <button onclick="openPerPlan('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr(polRec.lokasyon||'')}')" style="background:#1e7e4a;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">📅 Seçilenleri Planla</button>
+      <button onclick="perPlanHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.82em;white-space:nowrap;">Tümünü Seç</button>
+      <input id="perAlAra" placeholder="🔍 Eğitim ara..." oninput="filtrePerAlList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:.85em;flex:1;min-width:100px;">
     </div>
-    <div class="table-wrap" style="max-height:320px;">
-      <table><thead><tr><th style="width:30px;"></th><th>Konu</th><th>Tür</th><th>Süre</th></tr></thead>
+    <div class="table-wrap" style="max-height:280px;">
+      <table><thead><tr><th style="width:26px;"></th><th>Konu</th><th>Tür</th><th>Süre</th></tr></thead>
       <tbody id="perAlBody"></tbody></table>
+    </div>
+  </div>`;
+}
+
+function _buildAlınmamisPol(ad, guid, pol){
+  const mevcutMak=new Set(pol.map(r=>r.makine_adi).filter(Boolean));
+  const katMap=new Map();
+  POL.forEach(r=>{if(r.makine_adi&&!katMap.has(r.makine_adi))katMap.set(r.makine_adi,{ad:r.makine_adi,kodu:r.makine_kodu||'',grup:r.makinegrup_adi||''});});
+  try{const yn=JSON.parse(localStorage.getItem('_yeniMakineler')||'[]');
+    yn.forEach(m=>{if(m.ad&&!katMap.has(m.ad))katMap.set(m.ad,{ad:m.ad,kodu:m.kodu||'',grup:m.grup||''});});}catch(e){}
+  _perAlınmamisPolList=[...katMap.values()].filter(m=>!mevcutMak.has(m.ad)).sort((a,b)=>a.ad.localeCompare(b.ad,'tr'));
+  _perPolSel.clear();
+  if(!_perAlınmamisPolList.length)return '';
+  return `<div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:10px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+      <b style="font-size:.9em;white-space:nowrap;">📋 Eklenebilir Makine/Konular</b>
+      <span class="muted" id="perPolSayac" style="font-size:.82em;white-space:nowrap;">(${_perAlınmamisPolList.length})</span>
+      <button onclick="openPerPolEkle('${escAttr(ad)}','${escAttr(guid||'')}')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">🧩 Seçilenleri Ekle</button>
+      <button onclick="perPolHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.82em;white-space:nowrap;">Tümünü Seç</button>
+      <input id="perPolAra" placeholder="🔍 Makine ara..." oninput="filtrePerPolList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:.85em;flex:1;min-width:100px;">
+    </div>
+    <div class="table-wrap" style="max-height:220px;">
+      <table><thead><tr><th style="width:26px;"></th><th>Makine/Konu</th><th>Grup</th></tr></thead>
+      <tbody id="perPolBody"></tbody></table>
     </div>
   </div>`;
 }
 
 function _perAlRow(k,i){
   const sel=_perPlanSel.has(i);
-  return `<tr style="cursor:pointer;${sel?'background:#f0fdf4':''}" onclick="togglePerPlanSel(${i},this,!document.getElementById('ppck${i}').checked)">
+  return `<tr style="cursor:pointer;${sel?'background:#f0fdf4;font-weight:600;':''}" onclick="togglePerPlanSel(${i},this,!document.getElementById('ppck${i}').checked)">
     <td><input type="checkbox" id="ppck${i}" ${sel?'checked':''} style="cursor:pointer;accent-color:#1e7e4a;" onclick="event.stopPropagation();togglePerPlanSel(${i},this.closest('tr'),this.checked)"></td>
-    <td><b>${esc(k.konu)}</b></td>
+    <td>${esc(k.konu)}</td>
     <td class="muted">${esc(k.turu)}</td>
     <td class="muted">${k.sure?k.sure+' sa':''}</td>
   </tr>`;
@@ -1342,19 +1393,21 @@ function filtrePerAlList(){
   const q=(document.getElementById('perAlAra')?.value||'').toLowerCase();
   const tbody=document.getElementById('perAlBody');
   if(!tbody)return;
-  tbody.innerHTML=_perAlınmamisList
-    .map((k,i)=>({k,i}))
-    .filter(({k})=>!q||k.konu.toLowerCase().includes(q)||(k.turu||'').toLowerCase().includes(q))
-    .map(({k,i})=>_perAlRow(k,i)).join('');
+  const items=_perAlınmamisList.map((k,i)=>({k,i}));
+  // Seçilenler üstte sabit göster
+  const sel=items.filter(({i})=>_perPlanSel.has(i));
+  const unsel=items.filter(({i,k})=>!_perPlanSel.has(i)&&(!q||k.konu.toLowerCase().includes(q)||(k.turu||'').toLowerCase().includes(q)));
+  const sep=sel.length&&unsel.length?`<tr><td colspan="4" style="background:#e8f5e9;font-size:.76em;color:#1e7e4a;padding:2px 6px;font-weight:700;border-top:2px solid #bbf7d0;">▼ Seçilmemiş (${_perAlınmamisList.length-sel.length})</td></tr>`:'';
+  tbody.innerHTML=sel.map(({k,i})=>_perAlRow(k,i)).join('')+sep+unsel.map(({k,i})=>_perAlRow(k,i)).join('');
 }
 function togglePerPlanSel(i, row, on){
   const chk=document.getElementById('ppck'+i);
   if(!chk)return;
   chk.checked=on;
   if(on)_perPlanSel.add(i); else _perPlanSel.delete(i);
-  if(row)row.style.background=on?'#f0fdf4':'';
   document.getElementById('perAlSayac').textContent=
     `(${_perAlınmamisList.length} konu · ${_perPlanSel.size} seçili)`;
+  filtrePerAlList();
 }
 function perPlanHepsiniSec(){
   const hepsi=_perPlanSel.size<_perAlınmamisList.length;
@@ -1363,6 +1416,69 @@ function perPlanHepsiniSec(){
   filtrePerAlList();
   document.getElementById('perAlSayac').textContent=
     `(${_perAlınmamisList.length} konu · ${_perPlanSel.size} seçili)`;
+}
+
+function _perPolRow(m,i){
+  const sel=_perPolSel.has(i);
+  return `<tr style="cursor:pointer;${sel?'background:#f5f3ff;font-weight:600;':''}" onclick="togglePerPolSel(${i},this,!document.getElementById('ppck_pol${i}').checked)">
+    <td><input type="checkbox" id="ppck_pol${i}" ${sel?'checked':''} style="cursor:pointer;accent-color:#6d28d9;" onclick="event.stopPropagation();togglePerPolSel(${i},this.closest('tr'),this.checked)"></td>
+    <td>${esc(m.ad)}</td>
+    <td class="muted">${esc(m.grup)}</td>
+  </tr>`;
+}
+function filtrePerPolList(){
+  const q=(document.getElementById('perPolAra')?.value||'').toLowerCase();
+  const tbody=document.getElementById('perPolBody');
+  if(!tbody)return;
+  const items=_perAlınmamisPolList.map((m,i)=>({m,i}));
+  const sel=items.filter(({i})=>_perPolSel.has(i));
+  const unsel=items.filter(({i,m})=>!_perPolSel.has(i)&&(!q||m.ad.toLowerCase().includes(q)||(m.grup||'').toLowerCase().includes(q)));
+  const sep=sel.length&&unsel.length?`<tr><td colspan="3" style="background:#ede9fe;font-size:.76em;color:#6d28d9;padding:2px 6px;font-weight:700;border-top:2px solid #c4b5fd;">▼ Seçilmemiş (${_perAlınmamisPolList.length-sel.length})</td></tr>`:'';
+  tbody.innerHTML=sel.map(({m,i})=>_perPolRow(m,i)).join('')+sep+unsel.map(({m,i})=>_perPolRow(m,i)).join('');
+}
+function togglePerPolSel(i, row, on){
+  const chk=document.getElementById('ppck_pol'+i);
+  if(!chk)return;
+  chk.checked=on;
+  if(on)_perPolSel.add(i); else _perPolSel.delete(i);
+  document.getElementById('perPolSayac').textContent=
+    `(${_perAlınmamisPolList.length} konu · ${_perPolSel.size} seçili)`;
+  filtrePerPolList();
+}
+function perPolHepsiniSec(){
+  const hepsi=_perPolSel.size<_perAlınmamisPolList.length;
+  _perPolSel.clear();
+  if(hepsi)_perAlınmamisPolList.forEach((_,i)=>_perPolSel.add(i));
+  filtrePerPolList();
+  document.getElementById('perPolSayac').textContent=
+    `(${_perAlınmamisPolList.length} konu · ${_perPolSel.size} seçili)`;
+}
+function openPerPolEkle(ad,guid){
+  if(!_perPolSel.size){toast('En az bir makine/konu seçin','#d97706',2000);return;}
+  _perPolAd=ad; _perPolGuid=guid;
+  document.getElementById('perPolEkleInfo').textContent=`${_perPolSel.size} makine/konu → ${ad}`;
+  document.getElementById('perPolYet').value='1';
+  document.getElementById('perPolTarih').value=bugun();
+  document.getElementById('perPolEkleModal').style.display='flex';
+}
+async function savePerPolEkle(){
+  const yet=+document.getElementById('perPolYet').value;
+  const tarih=document.getElementById('perPolTarih').value||bugun();
+  const recs=[..._perPolSel].map(i=>{
+    const m=_perAlınmamisPolList[i];
+    return {uid:crypto.randomUUID(),personel:_perPolAd,personel_guid:_perPolGuid||null,
+      makine_adi:m.ad,makine_kodu:m.kodu||null,makinegrup_adi:m.grup||null,
+      yetenek:yet,degerlendirme_tar:tarih,kaynak:'manuel'};
+  });
+  recs.forEach(r=>{POL.push(r);});
+  document.getElementById('perPolEkleModal').style.display='none';
+  renderPersonelKart();
+  toast(`✅ ${recs.length} yetkinlik eklendi → ${_perPolAd}`,'#6d28d9',3000);
+  try{
+    await fetch(`${SUPA}/rest/v1/pol_polivalans`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(recs)});
+  }catch(e){toast('⚠ Kaydedildi (sunucu sync hatası: '+e.message+')','#d97706',4000);}
 }
 function openPerPlan(ad,guid,lok){
   if(!_perPlanSel.size){toast('En az bir eğitim seçin','#d97706',2000);return;}
