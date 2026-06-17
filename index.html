@@ -286,6 +286,7 @@
             <th>Durum</th>
             <th>Gerekli Eğitim / Değerlendirme</th>
             <th>Son Değerlendirme</th>
+            <th style="width:32px;"></th>
           </tr></thead>
           <tbody id="polBody"></tbody>
         </table>
@@ -455,6 +456,49 @@
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button onclick="closeTopluEgtDuzenle()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:7px 18px;cursor:pointer;">İptal</button>
         <button onclick="saveTopluEgtDuzenle()" style="background:#1e40af;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600;">💾 Kaydet</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Polivalans Satır Düzenleme Modalı -->
+<div class="modal-bg" id="polEditModal" style="display:none;">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-head"><h3>✏️ Yetkinlik Kaydını Düzenle</h3><button class="modal-x" onclick="document.getElementById('polEditModal').style.display='none'">✕</button></div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <p id="polEditInfo" style="margin:0;font-size:.88em;color:#64748b;"></p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Proses Grubu
+          <input id="polEditGrup" list="polEditGrupList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="Makine grubu / proses grubu">
+          <datalist id="polEditGrupList"></datalist>
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Proses
+          <input id="polEditProses" list="polEditProsesList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="Proses adı">
+          <datalist id="polEditProsesList"></datalist>
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Lokasyon
+          <input id="polEditLok" list="polEditLokList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="Lokasyon">
+          <datalist id="polEditLokList"></datalist>
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Departman
+          <input id="polEditDept" list="polEditDeptList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="Departman">
+          <datalist id="polEditDeptList"></datalist>
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Makine Kodu
+          <input id="polEditKod" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="ops.">
+        </label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Yetenek Seviyesi
+          <select id="polEditYet" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;">
+            <option value="1">1 — Başlangıç</option>
+            <option value="2">2 — Gelişmekte</option>
+            <option value="3">3 — Yetkin</option>
+            <option value="4">4 — Uzman</option>
+          </select>
+        </label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="document.getElementById('polEditModal').style.display='none'" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:7px 18px;cursor:pointer;">İptal</button>
+        <button onclick="savePolEdit()" style="background:#1e40af;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600;">💾 Kaydet</button>
       </div>
     </div>
   </div>
@@ -1242,6 +1286,60 @@ async function kaydetKopya(){
   }catch(e){toast('❌ Kopyalanamadı: '+e.message,'#dc2626',5000);}
 }
 
+let _polEditGuid='', _polEditMk='';
+function openPolEdit(guid,mk){
+  _polEditGuid=guid; _polEditMk=mk;
+  const key=guid+'|'+mk; const rec=POL_BY_KEY.get(key);
+  if(!rec){toast('Kayıt bulunamadı','#d97706',2000);return;}
+  document.getElementById('polEditInfo').textContent=`${rec.personel} — ${rec.makine_adi}`;
+  document.getElementById('polEditGrup').value=rec.makinegrup_adi||'';
+  document.getElementById('polEditProses').value=rec.proses||'';
+  document.getElementById('polEditLok').value=rec.lokasyon||'';
+  document.getElementById('polEditDept').value=rec.departman||'';
+  document.getElementById('polEditKod').value=rec.makine_kodu||'';
+  document.getElementById('polEditYet').value=rec.yetenek||'1';
+  // datalist'leri doldur
+  const grups=[...new Set(POL.map(r=>r.makinegrup_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('polEditGrupList').innerHTML=grups.map(g=>`<option value="${esc(g)}">`).join('');
+  const proses=[...new Set(POL.map(r=>r.proses).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('polEditProsesList').innerHTML=proses.map(p=>`<option value="${esc(p)}">`).join('');
+  const loks=[...new Set(POL.map(r=>r.lokasyon).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('polEditLokList').innerHTML=loks.map(l=>`<option value="${esc(l)}">`).join('');
+  const depts=[...new Set(POL.map(r=>r.departman).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('polEditDeptList').innerHTML=depts.map(d=>`<option value="${esc(d)}">`).join('');
+  document.getElementById('polEditModal').style.display='flex';
+}
+async function savePolEdit(){
+  const key=_polEditGuid+'|'+_polEditMk;
+  const rec=POL_BY_KEY.get(key);
+  if(!rec)return;
+  const grup=document.getElementById('polEditGrup').value.trim();
+  const proses=document.getElementById('polEditProses').value.trim();
+  const lok=document.getElementById('polEditLok').value.trim();
+  const dept=document.getElementById('polEditDept').value.trim();
+  const kod=document.getElementById('polEditKod').value.trim();
+  const yet=+document.getElementById('polEditYet').value;
+  // Bellek güncelle
+  rec.makinegrup_adi=grup||null; rec.proses=proses||null;
+  rec.lokasyon=lok||null; rec.departman=dept||null;
+  if(kod)rec.makine_kodu=kod;
+  rec.yetenek=yet;
+  document.getElementById('polEditModal').style.display='none';
+  renderPol(); renderPersonelKart();
+  toast('✅ Kayıt güncellendi','#1e40af',2000);
+  // Supabase PATCH
+  const body={makinegrup_adi:grup||null,proses:proses||null,lokasyon:lok||null,departman:dept||null,yetenek:yet};
+  if(kod)body.makine_kodu=kod;
+  let url='';
+  if(rec.pol_inckey!=null) url=`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${rec.pol_inckey}`;
+  else if(rec.uid) url=`${SUPA}/rest/v1/egt_polivalans?uid=eq.${encodeURIComponent(rec.uid)}`;
+  if(url){
+    try{await fetch(url,{method:'PATCH',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(body)});
+    }catch(e){toast('⚠ Sunucu güncelleme hatası: '+e.message,'#d97706',4000);}
+  }
+}
 async function silManuelPol(guid,mk){
   if(!confirm('Bu manuel yetkinlik kaydı silinsin mi?'))return;
   const key=guid+'|'+mk; const rec=POL_BY_KEY.get(key);
@@ -1945,17 +2043,19 @@ function renderPol(){
         const pd=PDEGER.get(key);
         const planEk=pd&&pd.plan_egitim_tarihi?`<br><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 ${esc(pd.plan_egitim_tarihi)}</span>`:'';
         const sonDeger=pd&&pd.deger_tarihi?`<span class="badge b-ok" style="cursor:pointer;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">📋 ${esc(pd.deger_tarihi)}</span>${planEk}`:`<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
-        const manRoz=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Sil">✏️🗑</span>`:'';
+        const silRoz2=r.kaynak==='manuel'?` <span title="Sil" style="cursor:pointer;color:#dc2626;font-size:.8em;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">🗑</span>`:'';
+        const editBtn2=`<button onclick="openPolEdit('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" style="background:none;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;color:#475569;font-size:.75em;padding:1px 5px;line-height:1.4;" title="Düzenle">✏️</button>`;
         const chk=_polSel.has(key)?'checked':'';
         html+=`<tr style="background:${r.kaynak==='manuel'?'#faf5ff':'#fff'};border-left:4px solid #e2e8f0;">
           <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
-          <td style="padding-left:22px;color:#334155;">${esc(r.makinegrup_adi||'')}${manRoz}</td>
+          <td style="padding-left:22px;color:#334155;">${esc(r.makinegrup_adi||'')}${silRoz2}</td>
           <td></td><td></td>
           <td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">${esc(r.makine_adi)}</td>
           <td class="muted">${esc(r.makine_kodu)}</td>
           <td><span class="yet yet${mevcut}">${mevcut}</span></td>
           <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
-          <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
+          <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td>
+          <td>${editBtn2}</td></tr>`;
       });
     });
     document.getElementById('polBody').innerHTML=html+(rows.length>2000?`<tr><td colspan="12" class="muted">… ${rows.length-2000} kayıt daha</td></tr>`:'');
@@ -1982,14 +2082,16 @@ function renderPol(){
       : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
     const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
     const chk=_polSel.has(key)?'checked':'';
-    const manRoz=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
+    const silRoz=r.kaynak==='manuel'?` <span title="Sil" style="cursor:pointer;color:#dc2626;font-size:.8em;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">🗑</span>`:'';
+    const editBtn=`<button onclick="openPolEdit('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" style="background:none;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;color:#475569;font-size:.75em;padding:1px 5px;line-height:1.4;" title="Düzenle">✏️</button>`;
     return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
       <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
-      <td><b>${esc(r.personel)}</b>${manRoz}</td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
+      <td><b>${esc(r.personel)}</b>${silRoz}</td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
       <td class="muted">${esc(r.makinegrup_adi)}</td>${mkCell}<td class="muted">${esc(r.makine_kodu)}</td>
       <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
       <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
-      <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
+      <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td>
+      <td>${editBtn}</td></tr>`;
   }).join('')
     +(rows.length>2000?`<tr><td colspan="12" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
   polBulkUpdate();
