@@ -400,9 +400,32 @@
           <option value="0">⏳ Bekleyen / Planlanmış</option>
         </select>
         <span class="muted" id="konuInfo"></span>
+        <button class="btn" style="background:#7c3aed;color:#fff;margin-left:auto;" onclick="openYeniMakine()">➕ Yeni Makine/Konu Ekle</button>
       </div>
     </div>
     <div id="konuDetay"></div>
+  </div>
+</div>
+
+<!-- Yeni Makine/Konu Tanımla Modalı -->
+<div class="modal-bg" id="yeniMakineModal" style="display:none;">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#7c3aed,#5b21b6);"><h3>➕ Yeni Makine / Konu Tanımla</h3><button class="modal-x" onclick="document.getElementById('yeniMakineModal').style.display='none'">✕</button></div>
+    <div style="padding:16px;display:grid;gap:12px;">
+      <p style="margin:0;font-size:.85em;color:#64748b;">Tanımlanan makine/konu, Manuel Yetkinlik Ekle dropdownında görünür. Tarayıcı hafızasında saklanır.</p>
+      <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Makine / Konu Adı *<input id="ymAd" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.95em;" placeholder="örn: CNC TORNA MAKİNESİ"></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Makine Kodu<input id="ymKod" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="ops."></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Makine Grubu<input id="ymGrup" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="ops."></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Proses<input id="ymProses" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="ops."></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Departman<input id="ymDept" list="mDeptList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;"></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;grid-column:1/-1;">Lokasyon<input id="ymLok" list="mLokList" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;width:100%;"></label>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="document.getElementById('yeniMakineModal').style.display='none'" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:7px 18px;cursor:pointer;">İptal</button>
+        <button onclick="saveYeniMakine()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:7px 18px;cursor:pointer;font-weight:600;">💾 Kaydet</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -553,9 +576,8 @@
     <div class="modal-body">
       <div class="muted" style="font-size:.85em;margin-bottom:12px;">Manuel kayıtlar LeanSys güncellemesinde <b>silinmez</b>; yalnızca buradan kaldırabilirsiniz.</div>
       <div class="fgroup"><label>Personel *</label><input list="mPersList" id="mPolPersonel" placeholder="Ad Soyad"></div>
-      <datalist id="mPersList"></datalist>
       <div class="frow" style="grid-template-columns:2fr 1fr;">
-        <div class="fgroup"><label>Makine / Konu *</label><input id="mPolMakine" placeholder="Makine veya konu adı"></div>
+        <div class="fgroup"><label>Makine / Konu *</label><input id="mPolMakine" list="mMakineList" oninput="mPolMakineOtoFill()" autocomplete="off" placeholder="Listeden seçin veya yeni yazın"></div>
         <div class="fgroup"><label>Kod</label><input id="mPolKod" placeholder="ops."></div>
       </div>
       <div class="frow">
@@ -563,7 +585,6 @@
         <div class="fgroup"><label>Departman</label><input list="mDeptList" id="mPolDept"></div>
         <div class="fgroup"><label>Lokasyon</label><input list="mLokList" id="mPolLok"></div>
       </div>
-      <datalist id="mDeptList"></datalist><datalist id="mLokList"></datalist>
       <div class="fgroup"><label>Proses Grubu</label><input id="mPolGrup" placeholder="ops."></div>
     </div>
     <div class="modal-foot">
@@ -911,13 +932,43 @@ function renderPolDash(){
 
 // ===================== MANUEL GİRİŞ (admin) =====================
 function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi,'_').replace(/^_|_$/g,'');}
+let _mPolMakineMap=new Map(); // ad -> {kodu,grup,proses,dept,lok}
 function openMPol(){
   document.getElementById('mPolPersonel').value='';document.getElementById('mPolMakine').value='';
   document.getElementById('mPolKod').value='';document.getElementById('mPolYet').value='4';
   document.getElementById('mPolDept').value='';document.getElementById('mPolLok').value='';document.getElementById('mPolGrup').value='';
+  // Makine listesini POL + localStorage yeni makinelerden doldur
+  _mPolMakineMap.clear();
+  POL.forEach(r=>{if(r.makine_adi&&!_mPolMakineMap.has(r.makine_adi))_mPolMakineMap.set(r.makine_adi,{kodu:r.makine_kodu||'',grup:r.makinegrup_adi||'',proses:r.proses||'',dept:r.departman||'',lok:r.lokasyon||''});});
+  try{const yeni=JSON.parse(localStorage.getItem('_yeniMakineler')||'[]');yeni.forEach(m=>{if(!_mPolMakineMap.has(m.ad))_mPolMakineMap.set(m.ad,{kodu:m.kodu||'',grup:m.grup||'',proses:m.proses||'',dept:m.dept||'',lok:m.lok||''});});}catch(e){}
+  const names=[..._mPolMakineMap.keys()].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('mMakineList').innerHTML=names.map(n=>`<option value="${esc(n)}">`).join('');
   document.getElementById('mPolModal').classList.add('show');
 }
+function mPolMakineOtoFill(){
+  const v=document.getElementById('mPolMakine').value.trim();
+  const m=_mPolMakineMap.get(v); if(!m)return;
+  if(m.kodu)document.getElementById('mPolKod').value=m.kodu;
+  if(m.grup)document.getElementById('mPolGrup').value=m.grup;
+  if(m.dept)document.getElementById('mPolDept').value=m.dept;
+  if(m.lok)document.getElementById('mPolLok').value=m.lok;
+}
 function closeMPol(){document.getElementById('mPolModal').classList.remove('show');}
+
+// --- Yeni Makine/Konu Tanımla ---
+function openYeniMakine(){
+  ['ymAd','ymKod','ymGrup','ymProses','ymDept','ymLok'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('yeniMakineModal').style.display='flex';
+}
+function saveYeniMakine(){
+  const ad=document.getElementById('ymAd').value.trim();
+  if(!ad){toast('Makine/konu adı zorunlu','#d97706',2000);return;}
+  const entry={ad,kodu:document.getElementById('ymKod').value.trim(),grup:document.getElementById('ymGrup').value.trim(),proses:document.getElementById('ymProses').value.trim(),dept:document.getElementById('ymDept').value.trim(),lok:document.getElementById('ymLok').value.trim()};
+  try{const list=JSON.parse(localStorage.getItem('_yeniMakineler')||'[]');if(!list.find(x=>x.ad===ad)){list.push(entry);localStorage.setItem('_yeniMakineler',JSON.stringify(list));}
+  }catch(e){}
+  document.getElementById('yeniMakineModal').style.display='none';
+  toast(`✅ "${ad}" kataloğa eklendi — Manuel Yetkinlik dropdownında görünür`,'#1e7e4a',3000);
+}
 async function kaydetMPol(){
   const personel=document.getElementById('mPolPersonel').value.trim();
   const makine=document.getElementById('mPolMakine').value.trim();
@@ -2827,5 +2878,9 @@ loadAll(true);
 <!-- Datalistler body seviyesinde — modal overflow:auto bunu kesmez -->
 <datalist id="teDPersList"></datalist>
 <datalist id="mEgtKonuList"></datalist>
+<datalist id="mMakineList"></datalist>
+<datalist id="mDeptList"></datalist>
+<datalist id="mLokList"></datalist>
+<datalist id="mPersList"></datalist>
 </body>
 </html>
