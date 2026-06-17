@@ -1149,9 +1149,13 @@ function _buildKonuDatalist(){
   const mod=document.getElementById('konuMod').value;
   const lf=document.getElementById('konuLokF').value;
   const yf=document.getElementById('konuYilF').value;
+  const dur=document.getElementById('konuDurum').value;
   const dl=document.getElementById('konuDatalist');
   if(mod==='egitim'){
-    const ks=[...new Set(EGT.filter(r=>(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf)).map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    let base=EGT.filter(r=>(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
+    if(dur==='1') base=base.filter(r=>r.gerceklesme);
+    else if(dur==='0') base=base.filter(r=>!r.gerceklesme);
+    const ks=[...new Set(base.map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
     dl.innerHTML=ks.map(k=>`<option value="${esc(k)}">`).join('');
   }else{
     const ms=[...new Set(POL.filter(r=>!lf||r.lokasyon===lf).map(r=>r.makine_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
