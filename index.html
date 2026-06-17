@@ -1415,10 +1415,11 @@ function renderDash(){
   if(hAy)aylikDs.push({label:`Hedef (${hAy})`,data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
   drawGrouped('chAylik',AYLAR,aylikDs);
 
-  // --- Aylık eğitim adeti: planlanan vs gerçekleşen ---
+  // --- Aylık eğitim adeti: planlanan vs gerçekleşen (benzersiz oturum sayısı) ---
   const ayPlanAdet=Array(12).fill(0), ayGerAdet=Array(12).fill(0);
-  e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlanAdet[m]++;}});
-  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGerAdet[m]++;}});
+  const planSess=new Set(), gerSess=new Set();
+  e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!planSess.has(k)){planSess.add(k);ayPlanAdet[m]++;}}}});
+  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!gerSess.has(k)){gerSess.add(k);ayGerAdet[m]++;}}}});
   drawGrouped('chAylikAdet',AYLAR,[
     {label:'Planlanan',data:ayPlanAdet,color:'#cbd5e1'},
     {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}
