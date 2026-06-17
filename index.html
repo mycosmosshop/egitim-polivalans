@@ -2274,8 +2274,8 @@ function topluEgtDuzenle(){
       });
       return [...m.values()].sort((a,b)=>a.localeCompare(b,'tr'));
     };
-    let sorted=lok?collect(true):collect(false);
-    if(!sorted.length)sorted=collect(false);
+    // Tüm lokasyonlardan personel göster (eğitim farklı lokasyon personeline de verilebilir)
+    let sorted=collect(false);
     document.getElementById('teDPersList').innerHTML=sorted.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('');
   }else{pf.style.display='none';}
   document.getElementById('topluEgtModal').style.display='flex';
@@ -2346,7 +2346,7 @@ function doGenerateTutanak(){
   if(!rows.length){toast('Tutanak oluşturulacak kayıt yok','#d97706',2500);return;}
   const gruplar=new Map();
   rows.forEach(r=>{
-    const gk=[r.konu||'',r.kayit_tarih||r.plan_tarih||'',r.egitici||'',r.lokasyon||''].join('|');
+    const gk=[r.konu||'',r.plan_tarih||'',r.egitici||'',r.lokasyon||''].join('|');
     if(!gruplar.has(gk))gruplar.set(gk,[]);
     gruplar.get(gk).push(r);
   });
