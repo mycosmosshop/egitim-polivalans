@@ -2399,8 +2399,8 @@ function doGenerateTutanak(){
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:Arial,sans-serif;font-size:9pt;background:#fff}
-      .page{width:197mm;margin:0 auto;padding:8mm 8mm 4mm;page-break-after:always}
-      .page:last-child{page-break-after:avoid}
+      .page{width:197mm;margin:0 auto;padding:8mm 8mm 4mm}
+      .page:not(:last-child){page-break-after:always;break-after:page}
       table{border-collapse:collapse;width:100%}
       td,th{padding:1px 4px}
       .bb{border-bottom:1px solid #000}
@@ -2408,7 +2408,7 @@ function doGenerateTutanak(){
       @media print{
         @page{size:A4;margin:0}
         .page{margin:0;width:100%;padding:7mm 8mm 4mm}
-        .page:last-child{page-break-after:avoid}
+        .page:not(:last-child){page-break-after:always;break-after:page}
       }
     </style></head><body>${pages}</body></html>`;
   const w=window.open('','_blank','width=900,height=950');
