@@ -705,7 +705,7 @@ async function loadAll(notify){
     try{const pd=AYAR['pasif_personeller'];PASIF_DATA=pd?JSON.parse(pd):[];PASIF_GUIDS=new Set(PASIF_DATA.map(p=>p.guid));}catch(e){PASIF_DATA=[];PASIF_GUIDS=new Set();}
     // Aktif personel: POL tablosundaki leansys kayıtlı guid'ler + manuel guid'ler (her loadAll'da otomatik türetilir)
     try{
-      const lsGuids=new Set(POL.filter(r=>r.kaynak==='leansys').map(r=>r.personel_guid||r.personel).filter(Boolean));
+      const lsGuids=new Set(POL.filter(r=>r.kaynak==='leansys'&&!r.cikis_tar).map(r=>r.personel_guid||r.personel).filter(Boolean));
       const manGuids=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>r.personel_guid||r.personel).filter(Boolean));
       AKTIF_GUIDS=lsGuids.size>0?new Set([...lsGuids,...manGuids]):null;
     }catch(e){AKTIF_GUIDS=null;}
