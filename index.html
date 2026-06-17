@@ -316,6 +316,7 @@
           <div class="dropdown-menu" id="egtMenu">
             <button onclick="topluOtoDeger()">🎯 Otomatik Değerlendir</button>
             <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
+            <button onclick="openKopya()">🔄 Önceki Yılı Kopyala</button>
             <hr>
             <button onclick="openChanges()">📝 Değişikliklerim <span class="chg-count" style="background:#dcfce7;color:#166534;border-radius:10px;padding:0 6px;font-size:.85em;"></span></button>
           </div>
@@ -509,6 +510,35 @@
     <div class="modal-foot">
       <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeMEgt()">İptal</button>
       <button class="btn" style="background:#7c3aed;color:#fff;" onclick="kaydetMEgt()">💾 Ekle</button>
+    </div>
+  </div>
+</div>
+
+<!-- Eğitim Kopyala Modalı -->
+<div class="modal-bg" id="kopyaModal">
+  <div class="modal" style="max-width:640px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0369a1);"><h3>🔄 Eğitim Kopyala — Yeni Yıla Aktar</h3><button class="modal-x" onclick="closeKopya()">✕</button></div>
+    <div class="modal-body">
+      <div class="frow" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:8px;">
+        <div class="fgroup"><label>Kaynak Yıl</label><select id="kpKaynakYil" onchange="kpKaynakChanged()"></select></div>
+        <div class="fgroup"><label>→ Hedef Yıl</label><select id="kpHedefYil" onchange="renderKopyaList()"></select></div>
+        <div class="fgroup"><label>Lokasyon</label><select id="kpLok" onchange="renderKopyaList()"></select></div>
+      </div>
+      <div class="frow" style="grid-template-columns:1fr auto auto auto;align-items:flex-end;margin-bottom:8px;">
+        <input id="kpSearch" placeholder="Konu ara..." oninput="renderKopyaList()" style="padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;font-size:.9em;width:100%;">
+        <button class="btn" style="background:#e0f2fe;color:#0369a1;padding:5px 10px;font-size:.85em;" onclick="kpSelAll()">Tümünü Seç</button>
+        <button class="btn" style="background:#f1f5f9;color:#475569;padding:5px 10px;font-size:.85em;" onclick="_kopyaSel.clear();renderKopyaList()">Bırak</button>
+        <span id="kpSelInfo" style="color:#0369a1;font-size:.85em;white-space:nowrap;"></span>
+      </div>
+      <div id="kpList" style="max-height:300px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;background:#fafafa;"></div>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.9em;"><input type="checkbox" id="kpKatilim" checked style="accent-color:#0891b2;">Katılımcıları da kopyala</label>
+        <span id="kpSummary" class="muted" style="font-size:.82em;"></span>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeKopya()">İptal</button>
+      <button class="btn" style="background:#0891b2;color:#fff;" onclick="kaydetKopya()">🔄 Kopyala</button>
     </div>
   </div>
 </div>
@@ -885,6 +915,132 @@ async function kaydetMEgt(){
     toast(`✏️ ${recs.length} kişi için eğitim eklendi`,'#16a34a',2000);
   }catch(e){toast('❌ Eklenemedi: '+e.message,'#dc2626',5000);}
 }
+// ===================== EĞİTİM KOPYALA (Yeni Yıla Aktar) =====================
+let _kopyaSel=new Set(), _kopySessions=[];
+function shiftDateYear(dateStr,fromYear,toYear){
+  if(!dateStr||dateStr.length<10)return dateStr;
+  const newYear=parseInt(dateStr.slice(0,4))+(toYear-fromYear);
+  const md=dateStr.slice(4);
+  if(md==='-02-29'){const lp=newYear%4===0&&(newYear%100!==0||newYear%400===0);return newYear+(lp?'-02-29':'-02-28');}
+  return newYear+md;
+}
+function openKopya(){
+  _kopyaSel.clear();
+  const yillar=[...new Set(EGT.map(r=>r.yil||(r.plan_tarih||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const kaynakHtml=yillar.map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('kpKaynakYil').innerHTML=kaynakHtml;
+  const defKaynak=yillar[0]||'2025';
+  document.getElementById('kpKaynakYil').value=defKaynak;
+  const defHedef=String(parseInt(defKaynak)+1);
+  const hedefSet=[...new Set([...yillar,defHedef])].sort().reverse();
+  document.getElementById('kpHedefYil').innerHTML=hedefSet.map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('kpHedefYil').value=defHedef;
+  const loks=[...new Set(EGT.map(r=>r.lokasyon).filter(Boolean))].sort();
+  document.getElementById('kpLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  document.getElementById('kpSearch').value='';
+  renderKopyaList();
+  document.getElementById('kopyaModal').classList.add('show');
+}
+function closeKopya(){document.getElementById('kopyaModal').classList.remove('show');}
+function kpKaynakChanged(){
+  const hy=String(parseInt(document.getElementById('kpKaynakYil').value||'2025')+1);
+  const hSel=document.getElementById('kpHedefYil');
+  if([...hSel.options].some(o=>o.value===hy))hSel.value=hy;
+  else{hSel.innerHTML=`<option value="${hy}">${hy}</option>`+hSel.innerHTML;hSel.value=hy;}
+  renderKopyaList();
+}
+function renderKopyaList(){
+  const ky=document.getElementById('kpKaynakYil').value;
+  const hy=document.getElementById('kpHedefYil').value;
+  const lok=document.getElementById('kpLok').value;
+  const q=(document.getElementById('kpSearch').value||'').toLowerCase();
+  // EGT kayıtlarını oturum (konu+tarih) bazında grupla
+  const sesMap=new Map();
+  EGT.forEach(r=>{
+    const yil=r.yil||(r.plan_tarih||'').slice(0,4);
+    if(yil!==ky)return;
+    if(lok&&r.lokasyon!==lok)return;
+    const konu=r.konu||'';
+    if(q&&!konu.toLowerCase().includes(q))return;
+    const tarih=r.plan_tarih||r.kayit_tarih||'';
+    const key=konu+'|||'+tarih;
+    if(!sesMap.has(key))sesMap.set(key,{key,konu,tarih,lok:r.lokasyon||'',tur:r.turu||'',sure:r.sure,egitici:r.egitici||'',pers:[]});
+    const ses=sesMap.get(key);
+    const g=r.personel_guid;
+    if(g&&r.personel&&!ses.pers.find(p=>p.guid===g))
+      ses.pers.push({guid:g,personel:r.personel,lokasyon:r.lokasyon||''});
+    if(!ses.lok&&r.lokasyon)ses.lok=r.lokasyon;
+  });
+  _kopySessions=[...sesMap.values()].sort((a,b)=>a.konu.localeCompare(b.konu,'tr')||a.tarih.localeCompare(b.tarih));
+  document.getElementById('kpList').innerHTML=_kopySessions.length
+    ?_kopySessions.map((s,i)=>{
+        const ht=shiftDateYear(s.tarih,parseInt(ky),parseInt(hy));
+        const chk=_kopyaSel.has(s.key);
+        return`<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #e2e8f0;background:${chk?'#e0f2fe':'transparent'};">
+          <input type="checkbox" ${chk?'checked':''} onchange="_kopyaToggle(${i},this.checked)" style="cursor:pointer;accent-color:#0891b2;flex-shrink:0;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:.88em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.konu)}</div>
+            <div style="font-size:.76em;color:#64748b;">${s.tarih||'—'} → <b style="color:#0369a1;">${ht||'—'}</b>${s.pers.length?` · ${s.pers.length} kişi`:''}${s.egitici?' · '+esc(s.egitici):''}${s.lok?' · '+esc(s.lok):''}</div>
+          </div>
+        </label>`;
+      }).join('')
+    :'<div style="padding:14px;color:#94a3b8;text-align:center;">Bu filtrede eğitim kaydı bulunamadı</div>';
+  _kpUpdateInfo();
+}
+function _kopyaToggle(idx,on){
+  const s=_kopySessions[idx];if(!s)return;
+  if(on)_kopyaSel.add(s.key);else _kopyaSel.delete(s.key);
+  // Sadece o satırın arka planını güncelle (scroll pozisyonu korunur)
+  const labels=document.querySelectorAll('#kpList label');
+  if(labels[idx])labels[idx].style.background=on?'#e0f2fe':'transparent';
+  _kpUpdateInfo();
+}
+function kpSelAll(){
+  const allSel=_kopySessions.length>0&&_kopySessions.every(s=>_kopyaSel.has(s.key));
+  if(allSel)_kopyaSel.clear();else _kopySessions.forEach(s=>_kopyaSel.add(s.key));
+  renderKopyaList();
+}
+function _kpUpdateInfo(){
+  const sel=_kopySessions.filter(s=>_kopyaSel.has(s.key));
+  const kisi=new Set(sel.flatMap(s=>s.pers.map(p=>p.guid)));
+  document.getElementById('kpSelInfo').textContent=sel.length?`${sel.length} eğitim · ${kisi.size} kişi seçili`:'';
+  document.getElementById('kpSummary').textContent=sel.length
+    ?`→ ${document.getElementById('kpHedefYil').value} yılına ${sel.length} eğitim${kisi.size?', '+kisi.size+' katılım kaydı':''} oluşturulacak`:'';}
+async function kaydetKopya(){
+  if(!_kopyaSel.size){toast('⚠ Önce kopyalanacak eğitim seçin','#d97706',2500);return;}
+  const ky=parseInt(document.getElementById('kpKaynakYil').value);
+  const hy=parseInt(document.getElementById('kpHedefYil').value);
+  if(ky===hy){toast('⚠ Kaynak ve hedef yıl aynı olamaz','#d97706',2500);return;}
+  const katilim=document.getElementById('kpKatilim').checked;
+  const sel=_kopySessions.filter(s=>_kopyaSel.has(s.key));
+  const ts=Date.now();
+  const recs=[];
+  sel.forEach((s,si)=>{
+    const ht=shiftDateYear(s.tarih,ky,hy);
+    if(katilim&&s.pers.length){
+      s.pers.forEach((p,pi)=>recs.push({
+        uid:`man_kpy_${ts}_${si}_${pi}`,plan_inckey:null,yil:String(hy),
+        konu:s.konu,turu:s.tur||null,lokasyon:p.lokasyon||s.lok||null,
+        plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+        personel:p.personel,personel_guid:p.guid,egitici:s.egitici||null,kaynak:'manuel'
+      }));
+    }else{
+      recs.push({uid:`man_kpy_${ts}_${si}_0`,plan_inckey:null,yil:String(hy),
+        konu:s.konu,turu:s.tur||null,lokasyon:s.lok||null,
+        plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+        personel:null,personel_guid:null,egitici:s.egitici||null,kaynak:'manuel'});
+    }
+  });
+  recs.forEach(r=>{EGT.push(r);EGT_BY_UID.set(r.uid,r);});
+  closeKopya();buildFilters();renderEgt();renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(recs)});
+    toast(`🔄 ${sel.length} eğitim ${hy} yılına kopyalandı (${recs.length} kayıt)`,'#0891b2',3000);
+  }catch(e){toast('❌ Kopyalanamadı: '+e.message,'#dc2626',5000);}
+}
+
 async function silManuelPol(guid,mk){
   if(!confirm('Bu manuel yetkinlik kaydı silinsin mi?'))return;
   const key=guid+'|'+mk; const rec=POL_BY_KEY.get(key);
@@ -1902,6 +2058,7 @@ document.getElementById('polModal').addEventListener('click',e=>{if(e.target.id=
 document.getElementById('planModal').addEventListener('click',e=>{if(e.target.id==='planModal')closePlan();});
 document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id==='mPolModal')closeMPol();});
 document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
+document.getElementById('kopyaModal').addEventListener('click',e=>{if(e.target.id==='kopyaModal')closeKopya();});
 document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
 document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
 document.getElementById('kpiPolModal').addEventListener('click',e=>{if(e.target.id==='kpiPolModal')closeKpiPol();});
