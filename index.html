@@ -230,6 +230,7 @@
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
         <button id="polAktifBtn" class="btn" style="background:#dcfce7;color:#166534;" onclick="togglePolAktif()" title="Aktif/tüm personel">👤 Aktif</button>
+        <button id="polGrupBtn" class="btn" style="background:#e2e8f0;color:#334155;" onclick="_polGruplu=!_polGruplu;_polAcikGruplar.clear();document.getElementById('polGrupBtn').textContent=_polGruplu?'☰ Detaylı':'▤ Gruplu';renderPol()">▤ Gruplu</button>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <div class="dropdown admin-only">
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('polMenu')">⚙️ İşlemler ▾</button>
@@ -1468,6 +1469,8 @@ function egitimOneri(mevcut,hedef){
   return o;
 }
 let _polSadceAktif=true;
+let _polGruplu=false;
+let _polAcikGruplar=new Set();
 function togglePolAktif(){
   _polSadceAktif=!_polSadceAktif;
   const btn=document.getElementById('polAktifBtn');
@@ -1512,6 +1515,57 @@ function renderPol(){
   document.getElementById('polGap').textContent=gapli.toLocaleString('tr');
   const cap=rows.slice(0,2000);
   window._polShownKeys=cap.map(hedefKey);
+
+  if(_polGruplu){
+    const gruplar=new Map();
+    cap.forEach(r=>{
+      const gk=r.personel_guid||r.personel||'';
+      if(!gruplar.has(gk))gruplar.set(gk,[]);
+      gruplar.get(gk).push(r);
+    });
+    let html='';
+    gruplar.forEach((rs,gk)=>{
+      const f=rs[0]; const acik=_polAcikGruplar.has(gk);
+      const manuelVar=rs.some(r=>r.kaynak==='manuel');
+      const manDot=manuelVar?'<span style="color:#7c3aed;font-size:.75em;margin-right:3px;">●</span>':'';
+      const gapler=rs.filter(r=>{const h=HEDEF.get(hedefKey(r));return h&&(+r.yetenek||0)<h;}).length;
+      const gapBadge=gapler?`<span class="badge b-no" style="margin-left:6px;">⚠ ${gapler} eksik</span>`:'';
+      html+=`<tr onclick="_polAcikGruplar.has('${escAttr(gk)}')?_polAcikGruplar.delete('${escAttr(gk)}'):_polAcikGruplar.add('${escAttr(gk)}');renderPol()" style="cursor:pointer;background:#f1f5f9;border-top:2px solid #cbd5e1;">
+        <td style="text-align:center;color:#64748b;font-size:.9em;">${acik?'▼':'▶'}</td>
+        <td><b>${manDot}${esc(f.personel)}</b>${gapBadge}</td>
+        <td class="muted">${esc(f.lokasyon||'')}</td>
+        <td>${esc(f.departman||'')}</td>
+        <td colspan="8" class="muted">${rs.length} makine/proses</td>
+      </tr>`;
+      if(acik) rs.forEach(r=>{
+        const key=hedefKey(r); const mevcut=+r.yetenek||0; const h=HEDEF.get(key)||'';
+        const gap=h?h-mevcut:0;
+        const durum=!h?'<span class="muted">—</span>':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠${gap}</span>`;
+        const pl=PLAN.get(key);
+        const plRozet=pl?`<br><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 ${esc(pl.plan_tarih||'planlı')}</span>`:'';
+        const oneri=gap>0?`<span style="font-size:.9em;color:#b45309;cursor:pointer;" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">${esc(egitimOneri(mevcut,h))} <b>＋</b></span>${plRozet}`:(pl?`<span class="muted" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" style="cursor:pointer;">Planlandı</span>${plRozet}`:(h?'<span class="muted">—</span>':''));
+        const sel=`<select onchange="saveHedef('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.value)" style="padding:2px 4px;border-radius:6px;border:1px solid #cbd5e1;font-weight:600;font-size:.85em;">
+          <option value="">—</option>${[1,2,3,4].map(n=>`<option value="${n}" ${h==n?'selected':''}>${n}</option>`).join('')}</select>`;
+        const pd=PDEGER.get(key);
+        const planEk=pd&&pd.plan_egitim_tarihi?`<br><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 ${esc(pd.plan_egitim_tarihi)}</span>`:'';
+        const sonDeger=pd&&pd.deger_tarihi?`<span class="badge b-ok" style="cursor:pointer;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">📋 ${esc(pd.deger_tarihi)}</span>${planEk}`:`<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
+        const manRoz=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Sil">✏️🗑</span>`:'';
+        const chk=_polSel.has(key)?'checked':'';
+        html+=`<tr style="background:${r.kaynak==='manuel'?'#faf5ff':'#fff'};border-left:4px solid #e2e8f0;">
+          <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
+          <td style="padding-left:22px;color:#334155;">${esc(r.makinegrup_adi||'')}${manRoz}</td>
+          <td></td><td></td>
+          <td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">${esc(r.makine_adi)}</td>
+          <td class="muted">${esc(r.makine_kodu)}</td>
+          <td><span class="yet yet${mevcut}">${mevcut}</span></td>
+          <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
+          <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
+      });
+    });
+    document.getElementById('polBody').innerHTML=html+(rows.length>2000?`<tr><td colspan="12" class="muted">… ${rows.length-2000} kayıt daha</td></tr>`:'');
+    polBulkUpdate(); return;
+  }
+
   document.getElementById('polBody').innerHTML=cap.map(r=>{
     const key=hedefKey(r); const mevcut=+r.yetenek||0; const h=HEDEF.get(key)||'';
     const gap=h?h-mevcut:0;
