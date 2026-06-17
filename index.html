@@ -2271,78 +2271,56 @@ function generateTutanak(){
   if(!gruplar.size){toast('Tutanak oluşturulacak kayıt yok','#d97706',2500);return;}
   const e=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const LOGO='https://mycosmosshop.github.io/egitim-polivalans/logo.png';
-  const partRows=(list)=>{
-    let h='';
-    for(let i=0;i<20;i++){
-      const l=list[i],r2=list[i+20];
-      h+=`<tr style="height:22px">
-        <td class=cb style="width:4%;text-align:center;font-size:8pt">${i+1}</td>
-        <td class=cb style="width:28%">${l?e(l.personel):''}</td>
-        <td class=cb style="width:14%"></td>
-        <td class=cb style="width:4%;text-align:center;font-size:8pt">${r2?(i+21):''}</td>
-        <td class=cb style="width:28%">${r2?e(r2.personel):''}</td>
-        <td class=cb style="width:14%"></td>
-      </tr>`;
-    }
-    return h;
-  };
+  const headerHtml=(f,pageNum,totalPages)=>`
+    <table style="width:100%;border-collapse:collapse;margin-bottom:4px"><tr>
+      <td style="width:28%;vertical-align:middle;padding:2px 0"><img src="${LOGO}" style="height:38px;max-width:160px;object-fit:contain"></td>
+      <td style="text-align:center;font-weight:bold;font-size:11pt;vertical-align:middle;line-height:1.4">KALİTE YÖNETİM SİSTEMİ DÖKÜMANTASYONU<br><span style="font-size:10pt">EĞİTİM TOPLANTI TUTANAĞI</span></td>
+      <td style="border:1px solid #000;font-size:7.5pt;padding:3px 5px;white-space:nowrap;vertical-align:top;width:115px">DOK.NO.: FR17<br>Y.TRH.: 01.11.2003<br>REV.NO/TARİH: 02/16.10.2013<br>SAYFA: ${pageNum}/${totalPages}</td>
+    </tr></table>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
+      <tr style="height:20px"><td style="white-space:nowrap;width:17%"><b>DÜZENLEYEN :</b></td><td class=bb style="width:36%">${e(f.egitici)}</td><td style="white-space:nowrap;width:13%;text-align:right"><b>TARİHİ :</b></td><td class=bb>${e(f.kayit_tarih||f.plan_tarih)}</td></tr>
+      <tr style="height:20px"><td><b>UNVANI :</b></td><td class=bb>${e(f.gorevi||'')}</td><td style="text-align:right"><b>SAATI :</b></td><td class=bb></td></tr>
+      <tr style="height:20px"><td><b>İMZASI :</b></td><td class=bb></td><td style="text-align:right"><b>YERİ :</b></td><td class=bb>${e(f.lokasyon)}</td></tr>
+    </table>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
+      <tr style="height:18px"><td class=cb style="width:50%;font-size:8.5pt"><b>Kullanılan Doküman No</b></td><td class=cb style="font-size:8.5pt"><b>Kullanılan Doküman Rev.No / Tarih</b></td></tr>
+      <tr style="height:18px"><td class=cb></td><td class=cb></td></tr>
+    </table>
+    <div style="border:1px solid #000;padding:4px 6px;min-height:40px;margin-bottom:4px"><b style="font-size:8.5pt">EĞİTİMİN KONUSU / AÇIKLAMALAR</b><br>${e(f.konu)}</div>`;
   let pages='';
   gruplar.forEach((rs)=>{
     const f=rs[0];
     const kat=rs.filter(r=>r.personel);
-    pages+=`<div class=page>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
-        <tr>
-          <td style="width:28%;vertical-align:middle;padding:2px 0">
-            <img src="${LOGO}" style="height:38px;max-width:160px;object-fit:contain">
-          </td>
-          <td style="text-align:center;font-weight:bold;font-size:11pt;vertical-align:middle;line-height:1.4">
-            KALİTE YÖNETİM SİSTEMİ DÖKÜMANTASYONU<br>
-            <span style="font-size:10pt">EĞİTİM TOPLANTI TUTANAĞI</span>
-          </td>
-          <td style="border:1px solid #000;font-size:7.5pt;padding:3px 5px;white-space:nowrap;vertical-align:top;width:115px">
-            DOK.NO.: FR17<br>Y.TRH.: 01.11.2003<br>REV.NO/TARİH: 02/16.10.2013<br>SAYFA: 1/1
-          </td>
-        </tr>
-      </table>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
-        <tr style="height:20px">
-          <td style="white-space:nowrap;width:17%"><b>DÜZENLEYEN :</b></td>
-          <td class=bb style="width:36%">${e(f.egitici)}</td>
-          <td style="white-space:nowrap;width:13%;text-align:right"><b>TARİHİ :</b></td>
-          <td class=bb>${e(f.kayit_tarih||f.plan_tarih)}</td>
-        </tr>
-        <tr style="height:20px">
-          <td><b>UNVANI :</b></td><td class=bb>${e(f.gorevi||'')}</td>
-          <td style="text-align:right"><b>SAATI :</b></td><td class=bb></td>
-        </tr>
-        <tr style="height:20px">
-          <td><b>İMZASI :</b></td><td class=bb></td>
-          <td style="text-align:right"><b>YERİ :</b></td><td class=bb>${e(f.lokasyon)}</td>
-        </tr>
-      </table>
-      <table style="width:100%;border-collapse:collapse;margin-bottom:4px">
-        <tr style="height:18px">
-          <td class=cb style="width:50%;font-size:8.5pt"><b>Kullanılan Doküman No</b></td>
-          <td class=cb style="font-size:8.5pt"><b>Kullanılan Doküman Rev.No / Tarih</b></td>
-        </tr>
-        <tr style="height:18px"><td class=cb></td><td class=cb></td></tr>
-      </table>
-      <div style="border:1px solid #000;padding:4px 6px;min-height:50px;margin-bottom:4px">
-        <b style="font-size:8.5pt">EĞİTİMİN KONUSU / AÇIKLAMALAR</b><br>${e(f.konu)}
-      </div>
-      <table style="width:100%;border-collapse:collapse">
-        <tr style="background:#f0f0f0">
-          <th class=cb style="width:4%;font-size:8.5pt">NO</th>
-          <th class=cb style="width:28%;font-size:8.5pt">ADI SOYADI</th>
-          <th class=cb style="width:14%;font-size:8.5pt">İMZA</th>
-          <th class=cb style="width:4%;font-size:8.5pt">NO</th>
-          <th class=cb style="width:28%;font-size:8.5pt">ADI SOYADI</th>
-          <th class=cb style="width:14%;font-size:8.5pt">İMZA</th>
-        </tr>
-        ${partRows(kat)}
-      </table>
-    </div>`;
+    // Her sayfaya 40 kişi (2 sütun × 20 satır); dinamik satır sayısı
+    const PER_PAGE=40;
+    const chunks=[];
+    for(let i=0;i<Math.max(kat.length,1);i+=PER_PAGE)chunks.push(kat.slice(i,i+PER_PAGE));
+    if(!chunks.length)chunks.push([]);
+    const totalPages=chunks.length;
+    chunks.forEach((chunk,ci)=>{
+      const nRows=Math.max(Math.ceil(chunk.length/2),10);
+      const offset=ci*PER_PAGE;
+      let rowsH='';
+      for(let i=0;i<nRows;i++){
+        const l=chunk[i],r2=chunk[i+nRows];
+        rowsH+=`<tr style="height:22px">
+          <td class=cb style="width:4%;text-align:center;font-size:8pt">${offset+i+1}</td>
+          <td class=cb style="width:28%">${l?e(l.personel):''}</td>
+          <td class=cb style="width:14%"></td>
+          <td class=cb style="width:4%;text-align:center;font-size:8pt">${r2?(offset+nRows+i+1):''}</td>
+          <td class=cb style="width:28%">${r2?e(r2.personel):''}</td>
+          <td class=cb style="width:14%"></td>
+        </tr>`;
+      }
+      pages+=`<div class=page>${headerHtml(f,ci+1,totalPages)}
+        <table style="width:100%;border-collapse:collapse">
+          <tr style="background:#f0f0f0">
+            <th class=cb style="width:4%;font-size:8.5pt">NO</th><th class=cb style="width:28%;font-size:8.5pt">ADI SOYADI</th><th class=cb style="width:14%;font-size:8.5pt">İMZA</th>
+            <th class=cb style="width:4%;font-size:8.5pt">NO</th><th class=cb style="width:28%;font-size:8.5pt">ADI SOYADI</th><th class=cb style="width:14%;font-size:8.5pt">İMZA</th>
+          </tr>${rowsH}
+        </table>
+      </div>`;
+    });
   });
   const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FR17 Eğitim Tutanağı</title>
     <style>
