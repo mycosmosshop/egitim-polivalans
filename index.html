@@ -2064,6 +2064,13 @@ async function egtUndo(){
 }
 // ===================== EĞİTİM ÇOKLU SEÇİM + SİL (yalnız manuel) =====================
 let _egtSel=new Set();
+let _egtGrupMap=new Map(); // gk -> manuel uid listesi (renderEgt'de doldurulur)
+function toggleEgtGrupSel(gk,on,ev){
+  ev.stopPropagation();
+  const uids=_egtGrupMap.get(gk)||[];
+  if(on)uids.forEach(u=>_egtSel.add(u));else uids.forEach(u=>_egtSel.delete(u));
+  renderEgt();
+}
 function toggleEgtSel(uid,on){
   if(on)_egtSel.add(uid);else _egtSel.delete(uid);
   _egtBulkUpdate();
@@ -2230,6 +2237,7 @@ function renderEgt(){
       grupler.get(gk).push(r);
     });
     let html='';
+    _egtGrupMap.clear();
     grupler.forEach((rs,gk)=>{
       if(gk.startsWith('__plan__')){html+=_egtRowDetay(rs[0]);return;}
       const f=rs[0],acik=_egtAcikGruplar.has(gk);
@@ -2237,8 +2245,12 @@ function renderEgt(){
       const isManuel=rs.some(r=>r.kaynak==='manuel');
       const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;">●</span>':'';
       const durum=gerN===rs.length?'<span class="badge b-ok">Tümü Gerçekleşti</span>':gerN>0?`<span class="badge" style="background:#fef3c7;color:#92400e;">${gerN}/${rs.length}</span>`:'<span class="badge b-no">Bekliyor</span>';
+      const manUids=rs.filter(r=>r.kaynak==='manuel').map(r=>r.uid);
+      _egtGrupMap.set(gk,manUids);
+      const allManSel=manUids.length>0&&manUids.every(u=>_egtSel.has(u));
+      const grupChk=isManuel?`<input type="checkbox" ${allManSel?'checked':''} onclick="toggleEgtGrupSel('${escAttr(gk)}',this.checked,event)" style="cursor:pointer;accent-color:#7c3aed;vertical-align:middle;margin-right:3px;">`:'';
       html+=`<tr onclick="toggleEgtGrup('${escAttr(gk)}')" style="cursor:pointer;background:#f1f5f9;border-top:2px solid #cbd5e1;">
-        <td style="text-align:center;color:#64748b;font-size:.9em;">${acik?'▼':'▶'}</td>
+        <td style="text-align:center;color:#64748b;font-size:.9em;">${grupChk}<span>${acik?'▼':'▶'}</span></td>
         <td>${esc(f.yil||'')}</td><td class="muted">${esc(f.lokasyon||'')}</td>
         <td><b>${manDot}${esc(f.konu)}</b></td>
         <td class="muted">${esc(f.turu||'')}</td>
