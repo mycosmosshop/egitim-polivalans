@@ -2467,6 +2467,7 @@ function renderEgt(){
       });
     });
     document.getElementById('egtBody').innerHTML=html+(rows.length>3000?`<tr><td colspan="14" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+    _egtBulkUpdate();
     return;
   }
 
@@ -2508,6 +2509,7 @@ function renderEgt(){
     <td>${esc(r.degerlendirme||'')}${(r.onceki_olcum||r.yeni_olcum)?`<br><span class="muted" style="font-size:.85em;">ölçüm: ${esc(r.onceki_olcum||'?')}→${esc(r.yeni_olcum||'?')}</span>`:''}</td>
     <td>${dgrBtn}</td></tr>`;}).join('')
     +(rows.length>3000?`<tr><td colspan="13" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+  _egtBulkUpdate();
 }
 
 // ===================== LeanSys Güncelle =====================
