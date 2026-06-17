@@ -424,7 +424,7 @@
       <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Eğitici<input id="teDEgitici" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:1em;" placeholder="(değişmez)"></label>
       <!-- Tek kayıt seçilince göster -->
       <div id="teDPerFields" style="display:none;border-top:1px dashed #e2e8f0;padding-top:10px;grid-gap:10px;grid-template-columns:1fr 1fr;">
-        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Personel Adı<input id="teDPersonel" list="teDPersList" autocomplete="off" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;"></label>
+        <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;grid-column:1/-1;">Personel Adı<select id="teDPersonel" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;width:100%;"></select></label>
         <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Görevi<input id="teDGorevi" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="(değişmez)"></label>
         <label style="display:grid;gap:4px;font-size:.88em;font-weight:600;">Sınav Notu<input id="teDNot" type="number" step="0.1" style="border:1px solid #cbd5e1;border-radius:6px;padding:6px 10px;font-size:.9em;" placeholder="(değişmez)"></label>
       </div>
@@ -2271,7 +2271,6 @@ function topluEgtDuzenle(){
   const pf=document.getElementById('teDPerFields');
   if(tek){
     pf.style.display='grid';
-    document.getElementById('teDPersonel').value=first.personel||'';
     document.getElementById('teDGorevi').value=first.gorevi||'';
     document.getElementById('teDNot').value=first.not_sonra!=null?first.not_sonra:'';
     // Lokasyona göre süzülmüş aktif personel listesi (POL + EGT birleşik)
@@ -2298,8 +2297,12 @@ function topluEgtDuzenle(){
       return [...m.values()].sort((a,b)=>a.localeCompare(b,'tr'));
     };
     // Tüm lokasyonlardan personel göster (eğitim farklı lokasyon personeline de verilebilir)
-    let sorted=collect(false);
-    document.getElementById('teDPersList').innerHTML=sorted.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('');
+    const sorted=collect(false);
+    const cur=first.personel||'';
+    const sel=document.getElementById('teDPersonel');
+    sel.innerHTML=`<option value="">(değişmez — boş bırak)</option>`
+      +sorted.map(n=>`<option value="${n.replace(/"/g,'&quot;')}"${n===cur?' selected':''}>${n.replace(/</g,'&lt;')}</option>`).join('');
+    if(cur&&!sorted.includes(cur))sel.innerHTML+=`<option value="${cur.replace(/"/g,'&quot;')}" selected>${cur.replace(/</g,'&lt;')}</option>`;
   }else{pf.style.display='none';}
   document.getElementById('topluEgtModal').style.display='flex';
 }
