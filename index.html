@@ -124,6 +124,10 @@
       <div class="chart-card"><h3>✅ Gerçekleşme Durumu (katılım)</h3><div class="chart-box tall"><canvas id="chDurum"></canvas></div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>🔢 Aylık Eğitim Adeti — Planlanan vs Gerçekleşen</h3><div class="chart-box tall"><canvas id="chAylikAdet"></canvas></div></div>
+      <div class="chart-card"><h3>📊 Eğitim Türü Dağılımı</h3><div class="chart-box tall"><canvas id="chTurAdet"></canvas></div></div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🏢 Departman Bazlı Adam·Saat</h3><div class="chart-box"><canvas id="chDept"></canvas></div></div>
       <div class="chart-card"><h3>📖 En Çok Eğitilen Konular (Adam·Saat)</h3><div class="chart-box"><canvas id="chKonu"></canvas></div></div>
     </div>
@@ -1410,6 +1414,25 @@ function renderDash(){
     {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}];
   if(hAy)aylikDs.push({label:`Hedef (${hAy})`,data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
   drawGrouped('chAylik',AYLAR,aylikDs);
+
+  // --- Aylık eğitim adeti: planlanan vs gerçekleşen ---
+  const ayPlanAdet=Array(12).fill(0), ayGerAdet=Array(12).fill(0);
+  e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlanAdet[m]++;}});
+  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGerAdet[m]++;}});
+  drawGrouped('chAylikAdet',AYLAR,[
+    {label:'Planlanan',data:ayPlanAdet,color:'#cbd5e1'},
+    {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}
+  ]);
+
+  // --- Tür bazlı planlanan vs gerçekleşen adet ---
+  const turPlanMap={},turGerMap={};
+  e.forEach(r=>{const T=r.turu||'(Belirsiz)';turPlanMap[T]=(turPlanMap[T]||0)+1;});
+  ger.forEach(r=>{const T=r.turu||'(Belirsiz)';turGerMap[T]=(turGerMap[T]||0)+1;});
+  const turAK=[...new Set([...Object.keys(turPlanMap),...Object.keys(turGerMap)])].sort((a,b)=>((turPlanMap[b]||0)-(turPlanMap[a]||0)));
+  drawGrouped('chTurAdet',turAK.map(k=>k.length>22?k.slice(0,22)+'…':k),[
+    {label:'Planlanan',data:turAK.map(k=>turPlanMap[k]||0),color:'#cbd5e1'},
+    {label:'Gerçekleşen',data:turAK.map(k=>turGerMap[k]||0),color:'#1e40af'}
+  ],true);
 
   // --- Gerçekleşme donut ---
   drawDoughnut('chDurum',['Gerçekleşen','Gerçekleşmeyen'],[ger.length,e.length-ger.length],['#16a34a','#e11d48']);
