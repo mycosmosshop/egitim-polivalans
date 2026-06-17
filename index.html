@@ -2252,21 +2252,31 @@ function topluEgtDuzenle(){
     document.getElementById('teDPersonel').value=first.personel||'';
     document.getElementById('teDGorevi').value=first.gorevi||'';
     document.getElementById('teDNot').value=first.not_sonra!=null?first.not_sonra:'';
-    // Lokasyona göre süzülmüş aktif personel listesi (eşleşme yoksa tümü)
+    // Lokasyona göre süzülmüş aktif personel listesi (POL + EGT birleşik)
     const lok=(first.lokasyon||'').trim().toUpperCase();
+    const ctMap=new Map();
+    POL.forEach(r=>{const g=normG(r.personel_guid||r.personel||'');if(g&&!ctMap.has(g))ctMap.set(g,r.cikis_tar||null);});
+    const isAktif=g=>{if(PASIF_GUIDS.has(normG(g)))return false;const ct=ctMap.get(normG(g));return!(ct&&ct<=bugun());};
     const collect=(filterLok)=>{
       const m=new Map();
       POL.forEach(r=>{
-        if(PASIF_GUIDS.has(normG(r.personel_guid||'')))return;
-        if(r.cikis_tar&&r.cikis_tar<=bugun())return;
+        if(!r.personel)return;
+        if(!isAktif(r.personel_guid||r.personel))return;
         if(filterLok&&(r.lokasyon||'').trim().toUpperCase()!==lok)return;
         const g=r.personel_guid||r.personel;
-        if(g&&r.personel&&!m.has(g))m.set(g,r.personel);
+        if(g&&!m.has(g))m.set(g,r.personel);
       });
-      return [...m.values()].filter(Boolean).sort((a,b)=>a.localeCompare(b,'tr'));
+      EGT.forEach(r=>{
+        if(!r.personel)return;
+        if(!isAktif(r.personel_guid||r.personel))return;
+        if(filterLok&&(r.lokasyon||'').trim().toUpperCase()!==lok)return;
+        const g=r.personel_guid||r.personel;
+        if(g&&!m.has(g))m.set(g,r.personel);
+      });
+      return [...m.values()].sort((a,b)=>a.localeCompare(b,'tr'));
     };
     let sorted=lok?collect(true):collect(false);
-    if(!sorted.length)sorted=collect(false); // lokasyon eşleşmedi → tümünü göster
+    if(!sorted.length)sorted=collect(false);
     document.getElementById('teDPersList').innerHTML=sorted.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('');
   }else{pf.style.display='none';}
   document.getElementById('topluEgtModal').style.display='flex';
