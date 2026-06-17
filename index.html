@@ -1177,7 +1177,13 @@ function renderKonuEgitim(konu,det){
   const adamSaat=ger.reduce((s,r)=>s+(+r.sure||0),0);
   // o eğitimi almayan personel (lokasyon filtreli polivalans personeli - alanlar)
   const persMap=new Map(); POL.filter(r=>!lf||r.lokasyon===lf).forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
-  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>({...v,guid:k}));
+  // Seçili yıl bazlı aktif personel filtresi: o yılda EGT kaydı VEYA POL tarihi o yıl içinde olan kişiler
+  const aktifYil=yf||String(new Date().getFullYear());
+  const aktifGuids=new Set([
+    ...EGT.filter(r=>r.yil===aktifYil).map(r=>r.personel_guid||r.personel),
+    ...POL.filter(r=>String(r.tarih||'')>=aktifYil+'-01-01').map(r=>r.personel_guid||r.personel)
+  ].filter(Boolean));
+  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)&&aktifGuids.has(k)).map(([k,v])=>({...v,guid:k}));
   document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
   window._almData=almayan; window._almKonu=konu;
   const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
@@ -1197,16 +1203,23 @@ function renderKonuEgitim(konu,det){
     <div class="grid2">
       <div class="chart-card"><h3>✅ Katılanlar <span class="muted" style="font-weight:400;">(${ger.length})</span></h3>
         <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Lokasyon</th><th>Tarih</th><th>Not</th><th>Eğitici</th></tr></thead><tbody>${alanRows||'<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div></div>
-      <div class="chart-card"><h3>🚫 Bu Eğitimi Almayanlar <span class="muted" style="font-weight:400;">(${almayan.length})</span></h3>
+      <div class="chart-card">
+        <h3 style="cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;" onclick="window._konuAlmYon=!window._konuAlmYon;renderKonuKart()">
+          <span>🚫 Bu Eğitimi Almayanlar <span class="muted" style="font-weight:400;">(${almayan.length})</span></span>
+          <span style="font-size:.85em;color:#64748b;">${window._konuAlmYon?'▲ Gizle':'▼ Göster'}</span>
+        </h3>
+        ${window._konuAlmYon?`<div>
         <div class="filters" style="margin-bottom:8px;">
           <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="openAlmPlan()">🎓 Seçilenlere Eğitim Planla</button>
           <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="almSelAll()">Tümünü Seç</button>
           <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="_almSel.clear();renderKonuKart()">Seçimi Bırak</button>
           <span class="muted" id="almSelInfo"></span>
         </div>
-        <div class="table-wrap" style="max-height:400px;"><table><thead><tr><th style="width:30px;"></th><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody>${almRows||'<tr><td colspan="4" class="muted">Herkes almış 🎉</td></tr>'}</tbody></table></div></div>
+        <div class="table-wrap" style="max-height:400px;"><table><thead><tr><th style="width:30px;"></th><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody>${almRows||'<tr><td colspan="4" class="muted">Herkes almış 🎉</td></tr>'}</tbody></table></div>
+        </div>`:''}
+      </div>
     </div>`;
-  document.getElementById('almSelInfo').textContent=_almSel.size?`${_almSel.size} seçili`:'';
+  const _almSelEl=document.getElementById('almSelInfo'); if(_almSelEl)_almSelEl.textContent=_almSel.size?`${_almSel.size} seçili`:'';
 }
 function renderKonuMakine(makine,det){
   const lf=document.getElementById('konuLokF').value;
