@@ -229,6 +229,7 @@
           <option value="planli">🎓 Eğitim Planlı</option>
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
+        <button id="polAktifBtn" class="btn" style="background:#dcfce7;color:#166534;" onclick="togglePolAktif()" title="Aktif/tüm personel">👤 Aktif</button>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <div class="dropdown admin-only">
           <button class="btn" style="background:#475569;color:#fff;" onclick="toggleMenu('polMenu')">⚙️ İşlemler ▾</button>
@@ -321,6 +322,8 @@
             <button onclick="openMEgt()">✏️ Manuel Eğitim Ekle</button>
             <button onclick="openKopya()">🔄 Önceki Yılı Kopyala</button>
             <hr>
+            <hr>
+            <button onclick="generateTutanak()">📄 Tutanak Oluştur (FR17)</button>
             <button onclick="openChanges()">📝 Değişikliklerim <span class="chg-count" style="background:#dcfce7;color:#166534;border-radius:10px;padding:0 6px;font-size:.85em;"></span></button>
           </div>
         </div>
@@ -1464,6 +1467,15 @@ function egitimOneri(mevcut,hedef){
   else o+='İşbaşı eğitimi + uygulamalı pratik, sonrasında yetkinlik değerlendirmesi.';
   return o;
 }
+let _polSadceAktif=true;
+function togglePolAktif(){
+  _polSadceAktif=!_polSadceAktif;
+  const btn=document.getElementById('polAktifBtn');
+  btn.textContent=_polSadceAktif?'👤 Aktif':'👥 Tümü';
+  btn.style.background=_polSadceAktif?'#dcfce7':'#e2e8f0';
+  btn.style.color=_polSadceAktif?'#166534':'#334155';
+  renderPol();
+}
 function polFiltered(){
   const q=document.getElementById('polSearch').value.toLowerCase().trim();
   const dept=document.getElementById('polDept').value;
@@ -1471,6 +1483,7 @@ function polFiltered(){
   const yet=document.getElementById('polYet').value;
   const durum=document.getElementById('polDurum').value;
   return POL.filter(r=>{
+    if(_polSadceAktif&&AKTIF_GUIDS&&!AKTIF_GUIDS.has(r.personel_guid||r.personel))return false;
     if(dept&&r.departman!==dept)return false;
     if(lok&&r.lokasyon!==lok)return false;
     if(yet&&String(r.yetenek)!==yet)return false;
@@ -2106,6 +2119,104 @@ async function topluBekleyeAl(){
     }
     toast(`↩ ${uids.length} kayıt "Bekliyor" durumuna alındı`,'#d97706',2500);
   }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+function generateTutanak(){
+  // Seçili kayıtlar varsa onları kullan, yoksa mevcut görünümdeki tüm grupları al
+  let rows=[];
+  if(_egtSel.size){
+    rows=[..._egtSel].map(u=>EGT_BY_UID.get(u)).filter(Boolean);
+  }else{
+    rows=egtFiltered().filter(r=>!r._plan);
+    if(!rows.length){toast('Önce eğitim kayıtlarını seçin veya filtre uygulayın','#d97706',3000);return;}
+    if(rows.length>500){toast('Çok fazla kayıt — önce filtreleyin (konu/yıl/lokasyon)','#d97706',3000);return;}
+  }
+  // Grup: konu + tarih + egitici + lokasyon
+  const gruplar=new Map();
+  rows.forEach(r=>{
+    const gk=[r.konu||'',r.kayit_tarih||r.plan_tarih||'',r.egitici||'',r.lokasyon||''].join('|');
+    if(!gruplar.has(gk))gruplar.set(gk,[]);
+    gruplar.get(gk).push(r);
+  });
+  if(!gruplar.size){toast('Tutanak oluşturulacak kayıt yok','#d97706',2500);return;}
+  const e=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const row20=(list,start)=>{
+    let h='';
+    for(let i=0;i<20;i++){
+      const l=list[i],r2=list[i+20];
+      h+=`<tr>
+        <td class=cb>${start+i}.</td><td class=cb style="width:25%">${l?e(l.personel):''}</td><td class=cb style="width:12%"></td>
+        <td class=cb>${r2?(start+i+20)+'.':''}</td><td class=cb style="width:25%">${r2?e(r2.personel):''}</td><td class=cb style="width:12%"></td>
+      </tr>`;
+    }
+    return h;
+  };
+  let pages='';
+  gruplar.forEach((rs)=>{
+    const f=rs[0];
+    const kat=rs.filter(r=>r.personel);
+    pages+=`<div class=page>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:6px">
+        <tr>
+          <td colspan=3 style="text-align:center;font-weight:bold;font-size:12pt;padding:6px 0">
+            KALİTE YÖNETİM SİSTEMİ DÖKÜMANTASYONU<br>
+            <span style="font-size:11pt">EĞİTİM TOPLANTI TUTANAĞI</span>
+          </td>
+          <td style="border:1px solid #000;font-size:8pt;padding:4px;white-space:nowrap;vertical-align:top;width:130px">
+            DOK.NO.: FR17<br>Y.TRH.: 01.11.2003<br>REV.NO/TARİH: 02/16.10.2013<br>SAYFA: 1/1
+          </td>
+        </tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+        <tr>
+          <td style="white-space:nowrap;width:18%"><b>DÜZENLEYEN :</b></td>
+          <td class=bb style="width:35%">${e(f.egitici)}</td>
+          <td style="white-space:nowrap;width:14%;text-align:right"><b>TARİHİ :</b></td>
+          <td class=bb>${e(f.kayit_tarih||f.plan_tarih)}</td>
+        </tr>
+        <tr><td colspan=4 style="height:5px"></td></tr>
+        <tr>
+          <td><b>UNVANI :</b></td><td class=bb>${e(f.gorevi||'')}</td>
+          <td style="text-align:right"><b>SAATI :</b></td><td class=bb></td>
+        </tr>
+        <tr><td colspan=4 style="height:5px"></td></tr>
+        <tr>
+          <td><b>İMZASI :</b></td><td class=bb></td>
+          <td style="text-align:right"><b>YERİ :</b></td><td class=bb>${e(f.lokasyon)}</td>
+        </tr>
+      </table>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
+        <tr>
+          <td class=cb style="width:50%"><b>Kullanılan Doküman No</b></td>
+          <td class=cb><b>Kullanılan Doküman Rev.No / Tarih</b></td>
+        </tr>
+        <tr><td class=cb style="height:22px"></td><td class=cb></td></tr>
+      </table>
+      <div style="border:1px solid #000;padding:6px;min-height:90px;margin-bottom:8px">
+        <b>EĞİTİMİN KONUSU / AÇIKLAMALAR</b><br><br>${e(f.konu)}
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tr>
+          <th class=cb style="width:5%">NO</th><th class=cb style="width:25%">ADI SOYADI</th><th class=cb style="width:12%">İMZA</th>
+          <th class=cb style="width:5%">NO</th><th class=cb style="width:25%">ADI SOYADI</th><th class=cb style="width:12%">İMZA</th>
+        </tr>
+        ${row20(kat,1)}
+      </table>
+    </div>`;
+  });
+  const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>FR17 Eğitim Tutanağı</title>
+    <style>
+      body{font-family:Arial,sans-serif;font-size:9.5pt;margin:0}
+      .page{width:19cm;margin:8mm auto;padding:6mm;page-break-after:always}
+      table{border-collapse:collapse;width:100%}
+      td,th{padding:2px 4px}
+      .bb{border-bottom:1px solid #000}
+      .cb{border:1px solid #000}
+      @media print{.page{margin:0;width:100%;padding:6mm}}
+    </style></head><body>${pages}</body></html>`;
+  const w=window.open('','_blank','width=850,height=900');
+  if(!w){toast('Popup engellendi — tarayıcı izin verin','#dc2626',4000);return;}
+  w.document.write(html);w.document.close();
+  setTimeout(()=>w.print(),400);
 }
 async function topluEgtSil(){
   const uids=[..._egtSel];
