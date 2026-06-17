@@ -2329,19 +2329,21 @@ function renderEgt(){
 // ===================== LeanSys Güncelle =====================
 async function refreshFromLeanSys(){
   const btn=document.getElementById('btnLs');btn.disabled=true;const old=btn.textContent;
-  btn.textContent='⏳ LeanSys güncelleniyor...';
+  let secs=0;
+  btn.textContent=`⏳ Güncelleniyor... (0s)`;
+  const timer=setInterval(()=>{secs++;btn.textContent=`⏳ Güncelleniyor... (${secs}s)`;},1000);
   try{
     const ctrl=new AbortController();const tmo=setTimeout(()=>ctrl.abort(),300000);
     const res=await fetch('http://127.0.0.1:17777/refreshegitim',{signal:ctrl.signal});
     clearTimeout(tmo);
     const j=await res.json();
-    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+'). Yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
+    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+' kayıt, '+secs+'s). Yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
     else{toast('⚠️ Güncelleme atlandı: '+((j&&j.error)||'bilinmeyen')+'. Mevcut veri gösteriliyor.','#d97706',6000);await loadAll(false);}
   }catch(e){
     console.warn(e);
     toast('ℹ️ Yerel güncelleme servisi yanıt vermedi (VPN/agent kapalı olabilir). Mevcut veri gösteriliyor.','#d97706',6000);
     await loadAll(false);
-  }finally{btn.disabled=false;btn.textContent=old;}
+  }finally{clearInterval(timer);btn.disabled=false;btn.textContent=old;}
 }
 
 // ===================== Excel =====================
