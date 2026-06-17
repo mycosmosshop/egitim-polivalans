@@ -1141,18 +1141,24 @@ function renderPersonelKart(){
 }
 
 // ===================== KONU / MAKİNE KARTI =====================
-function konuModChange(){
+function _buildKonuDatalist(){
   const mod=document.getElementById('konuMod').value;
+  const lf=document.getElementById('konuLokF').value;
+  const yf=document.getElementById('konuYilF').value;
   const dl=document.getElementById('konuDatalist');
-  document.getElementById('konuSec').value='';
-  document.getElementById('konuSec').placeholder = mod==='egitim'?'Eğitim konusu seç...':'Makine/konu seç...';
   if(mod==='egitim'){
-    const ks=[...new Set(EGT.map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    const ks=[...new Set(EGT.filter(r=>(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf)).map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
     dl.innerHTML=ks.map(k=>`<option value="${esc(k)}">`).join('');
   }else{
-    const ms=[...new Set(POL.map(r=>r.makine_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    const ms=[...new Set(POL.filter(r=>!lf||r.lokasyon===lf).map(r=>r.makine_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
     dl.innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
   }
+}
+function konuModChange(){
+  const mod=document.getElementById('konuMod').value;
+  document.getElementById('konuSec').value='';
+  document.getElementById('konuSec').placeholder = mod==='egitim'?'Eğitim konusu seç...':'Makine/konu seç...';
+  _buildKonuDatalist();
   document.getElementById('konuDetay').innerHTML='<div class="card muted">Detayını görmek için yukarıdan seçim yapın.</div>';
   document.getElementById('konuInfo').textContent='';
 }
@@ -1160,6 +1166,7 @@ function renderKonuKart(){
   const mod=document.getElementById('konuMod').value;
   const sel=document.getElementById('konuSec').value.trim();
   const det=document.getElementById('konuDetay');
+  _buildKonuDatalist();
   if(!sel){det.innerHTML='<div class="card muted">Detayını görmek için seçim yapın.</div>';return;}
   if(mod==='egitim') renderKonuEgitim(sel,det);
   else renderKonuMakine(sel,det);
