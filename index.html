@@ -85,6 +85,12 @@
   <h1>🎓 Eğitim &amp; Polivalans</h1>
   <div class="actions">
     <button class="btn btn-x" id="adminBtn" onclick="toggleAdmin()">🔒 Admin</button>
+    <span style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:3px 8px;">
+      <label style="font-size:.78em;font-weight:600;color:#166534;white-space:nowrap;">📅 Tarih aralığı:</label>
+      <input type="date" id="lsFrom" style="font-size:.8em;border:1px solid #d1fae5;border-radius:5px;padding:2px 5px;color:#166534;background:#fff;" title="Başlangıç tarihi (boş = tümü)">
+      <span style="font-size:.8em;color:#166534;">—</span>
+      <input type="date" id="lsTo" style="font-size:.8em;border:1px solid #d1fae5;border-radius:5px;padding:2px 5px;color:#166534;background:#fff;" title="Bitiş tarihi (boş = tümü)">
+    </span>
     <button class="btn btn-ls" id="btnLs" onclick="refreshFromLeanSys()">📥 LeanSys'ten Güncelle</button>
     <button class="btn btn-x" onclick="loadAll(true)">🔄 Yenile</button>
   </div>
@@ -3096,8 +3102,15 @@ async function refreshFromLeanSys(){
   btn.textContent=`⏳ Güncelleniyor... (0s)`;
   const timer=setInterval(()=>{secs++;btn.textContent=`⏳ Güncelleniyor... (${secs}s)`;},1000);
   try{
+    const from=(document.getElementById('lsFrom').value||'').trim();
+    const to=(document.getElementById('lsTo').value||'').trim();
+    let url='http://127.0.0.1:17777/refreshegitim';
+    const params=[];
+    if(from) params.push('from='+encodeURIComponent(from));
+    if(to)   params.push('to='+encodeURIComponent(to));
+    if(params.length) url+='?'+params.join('&');
     const ctrl=new AbortController();const tmo=setTimeout(()=>ctrl.abort(),300000);
-    const res=await fetch('http://127.0.0.1:17777/refreshegitim',{signal:ctrl.signal});
+    const res=await fetch(url,{signal:ctrl.signal});
     clearTimeout(tmo);
     const j=await res.json();
     if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+' kayıt, '+secs+'s). Yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
