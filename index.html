@@ -837,6 +837,7 @@ let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid
 let PASIF_GUIDS=new Set();              // ayrılan personel guid'leri (almayanlar/modal'dan gizlenir)
 let PASIF_DATA=[];                      // [{guid,ad}] — egt_ayar'da saklanır
 let AKTIF_GUIDS=null;                   // LeanSys son sync'ten gelen aktif personel guid seti (null=sync hiç yapılmadı)
+let PER_ROSTER=[];                      // [{guid,kod,ad}] aktif personel master (PER001) — polivalans/eğitim kaydı olmayanlar da burada
 let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
 let AYAR={};                            // KPI hedefleri vb. (egt_ayar)
 let _planHedefAuto=false;               // hedef gap'lerine toplu eğitim planla modu
@@ -890,6 +891,8 @@ async function loadAll(notify){
       const manGuids=new Set(POL.filter(r=>r.kaynak==='manuel').map(r=>normG(r.personel_guid||r.personel||'')).filter(Boolean));
       AKTIF_GUIDS=perSet&&perSet.size>0?new Set([...perSet,...manGuids]):null;
     }catch(e){AKTIF_GUIDS=null;}
+    // Aktif personel isimli roster (polivalans/eğitim kaydı olmayan çalışanlar da Personel sekmesinde görünsün)
+    try{const pr=AYAR['aktif_personel_data'];PER_ROSTER=pr?JSON.parse(pr):[];}catch(e){PER_ROSTER=[];}
     // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
     const _pm=new Map();
     POL.forEach(r=>{
@@ -1380,8 +1383,12 @@ function showTab(t){
 // ===================== PERSONEL KARTI =====================
 function buildPersDatalist(){
   const lf=document.getElementById('persLokF').value;
-  const src=lf?POL.filter(r=>r.lokasyon===lf):POL;
-  const pers=[...new Set(src.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const names=new Set();
+  (lf?POL.filter(r=>r.lokasyon===lf):POL).forEach(r=>{if(r.personel)names.add(r.personel);});
+  (lf?EGT.filter(r=>r.lokasyon===lf):EGT).forEach(r=>{if(r.personel)names.add(r.personel);});
+  // Aktif personel roster'ı lokasyonsuz; yalnızca "Tüm Lokasyonlar" seçiliyken ekle
+  if(!lf)PER_ROSTER.forEach(p=>{if(p.ad)names.add(p.ad);});
+  const pers=[...names].sort((a,b)=>a.localeCompare(b,'tr'));
   document.getElementById('persDatalist').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
 }
 function renderPersonelKart(){
@@ -1390,8 +1397,12 @@ function renderPersonelKart(){
   const det=document.getElementById('persDetay');
   if(!ad){det.innerHTML='<div class="card muted">Yetkinlik ve eğitim geçmişini görmek için bir personel seçin.</div>';document.getElementById('persInfo').textContent='';return;}
   const pol=POL.filter(r=>r.personel===ad);
-  if(!pol.length){det.innerHTML='<div class="card muted">Bu isimde polivalans kaydı yok.</div>';return;}
-  const guid=pol[0].personel_guid; const info=pol[0];
+  // Polivalans kaydı olmasa bile: eğitim katılımcısı veya aktif personel (PER001 roster) olabilir
+  const egtByName=EGT.filter(r=>r.personel===ad);
+  const rosterHit=PER_ROSTER.find(p=>p.ad===ad);
+  if(!pol.length&&!egtByName.length&&!rosterHit){det.innerHTML='<div class="card muted">Bu isimde personel kaydı bulunamadı.</div>';return;}
+  const guid=pol.length?pol[0].personel_guid:(egtByName.length?egtByName[0].personel_guid:(rosterHit?rosterHit.guid:null));
+  const info=pol.length?pol[0]:{departman:null,lokasyon:(egtByName[0]&&egtByName[0].lokasyon)||null};
   let egt=EGT.filter(r=>(guid&&r.personel_guid===guid)||r.personel===ad);
   if(yf)egt=egt.filter(r=>r.yil===yf);
   const egtGer=egt.filter(r=>r.gerceklesme);
@@ -1413,7 +1424,7 @@ function renderPersonelKart(){
     <td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
     <td>${r.gerceklesme?'<span class="badge b-ok">✓</span>':'<span class="badge b-no">—</span>'}</td>
     <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td></tr>`).join('');
-  const alınmamisEgtHtml=_buildAlınmamisEgt(ad,guid,pol[0]);
+  const alınmamisEgtHtml=_buildAlınmamisEgt(ad,guid,pol[0]||info);
   const alınmamisPolHtml=_buildAlınmamisPol(ad,guid,pol);
   det.innerHTML=`
     <div class="stats">
@@ -1426,7 +1437,7 @@ function renderPersonelKart(){
     <div class="grid2">
       <div class="chart-card" style="overflow:hidden;">
         <h3>🧩 Yetkinlikler <span class="muted" style="font-weight:400;">(${pol.length}) · Sv1:${yetC[0]} Sv2:${yetC[1]} Sv3:${yetC[2]} Sv4:${yetC[3]}</span></h3>
-        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th><th style="width:28px;"></th></tr></thead><tbody>${yetRows}</tbody></table></div>
+        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th><th style="width:28px;"></th></tr></thead><tbody>${yetRows||'<tr><td colspan="6" class="muted">Polivalans yetkinlik kaydı yok</td></tr>'}</tbody></table></div>
         ${alınmamisPolHtml}
       </div>
       <div class="chart-card" style="overflow:hidden;">
@@ -1479,7 +1490,7 @@ function _buildAlınmamisPol(ad, guid, pol){
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
       <b style="font-size:.9em;white-space:nowrap;">📋 Eklenebilir Makine/Konular</b>
       <span class="muted" id="perPolSayac" style="font-size:.82em;white-space:nowrap;">(${_perAlınmamisPolList.length})</span>
-      <button onclick="openPerPolEkle('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr(pol[0].lokasyon||'')}','${escAttr(pol[0].departman||'')}')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">🧩 Seçilenleri Ekle</button>
+      <button onclick="openPerPolEkle('${escAttr(ad)}','${escAttr(guid||'')}','${escAttr((pol[0]||{}).lokasyon||'')}','${escAttr((pol[0]||{}).departman||'')}')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.82em;white-space:nowrap;">🧩 Seçilenleri Ekle</button>
       <button onclick="perPolHepsiniSec()" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:.82em;white-space:nowrap;">Tümünü Seç</button>
       <input id="perPolAra" placeholder="🔍 Makine ara..." oninput="filtrePerPolList()" style="border:1px solid #e2e8f0;border-radius:6px;padding:4px 8px;font-size:.85em;flex:1;min-width:100px;">
     </div>
