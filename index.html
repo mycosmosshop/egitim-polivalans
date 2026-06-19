@@ -78,6 +78,8 @@
   .chk-sev-body{padding:8px 12px;}
   .chk-item{display:flex;align-items:flex-start;gap:9px;padding:5px 0;font-size:.88em;cursor:pointer;}
   .chk-item input{margin-top:3px;width:16px;height:16px;cursor:pointer;flex-shrink:0;}
+  .persDDItem:hover{background:#f0fdf4;}
+  #persDD::-webkit-scrollbar{width:10px;} #persDD::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:5px;}
 </style>
 </head>
 <body>
@@ -376,7 +378,10 @@
     <div class="card" style="margin-bottom:16px;">
       <div class="filters">
         <b style="color:#334155;">👤 Personel:</b>
-        <input list="persDatalist" id="persSec" placeholder="Personel ara/seç..." oninput="renderPersonelKart()" style="min-width:240px;">
+        <div style="position:relative;display:inline-block;">
+          <input id="persSec" autocomplete="off" placeholder="Personel ara/seç..." oninput="_persDDFilter();renderPersonelKart()" onfocus="_persDDOpen()" style="min-width:240px;">
+          <div id="persDD" style="display:none;position:absolute;top:100%;left:0;min-width:260px;z-index:60;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:340px;overflow-y:auto;margin-top:3px;"></div>
+        </div>
         <datalist id="persDatalist"></datalist>
         <select id="persLokF" onchange="buildPersDatalist();renderPersonelKart()"><option value="">Tüm Lokasyonlar</option></select>
         <select id="persYilF" onchange="renderPersonelKart()"><option value="">Tüm Yıllar (eğitim)</option></select>
@@ -1381,6 +1386,7 @@ function showTab(t){
 }
 
 // ===================== PERSONEL KARTI =====================
+let _persNames=[];   // Personel seçicinin kaynak listesi (lokasyona göre filtreli)
 function buildPersDatalist(){
   const lf=document.getElementById('persLokF').value;
   const names=new Set();
@@ -1388,8 +1394,30 @@ function buildPersDatalist(){
   (lf?EGT.filter(r=>r.lokasyon===lf):EGT).forEach(r=>{if(r.personel)names.add(r.personel);});
   // Aktif personel roster'ı lokasyonsuz; yalnızca "Tüm Lokasyonlar" seçiliyken ekle
   if(!lf)PER_ROSTER.forEach(p=>{if(p.ad)names.add(p.ad);});
-  const pers=[...names].sort((a,b)=>a.localeCompare(b,'tr'));
-  document.getElementById('persDatalist').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
+  _persNames=[...names].sort((a,b)=>a.localeCompare(b,'tr'));
+  // Native datalist'i de doldur (geriye uyum/erişilebilirlik; görünür dropdown özeldir)
+  const dl=document.getElementById('persDatalist'); if(dl)dl.innerHTML=_persNames.map(p=>`<option value="${esc(p)}">`).join('');
+  // Açık dropdown varsa tazele
+  const dd=document.getElementById('persDD'); if(dd&&dd.style.display!=='none')_persDDFilter();
+}
+// ── Özel (tam kaydırılabilir) personel açılır listesi ──────────────────────
+function _persDDRender(list){
+  const dd=document.getElementById('persDD'); if(!dd)return;
+  if(!list.length){ dd.innerHTML='<div style="padding:10px 12px;color:#94a3b8;font-size:.88em;">Eşleşen personel yok</div>'; return; }
+  dd.innerHTML=list.map(n=>`<div class="persDDItem" onmousedown="event.preventDefault();_persDDPick('${escAttr(n)}')" style="padding:8px 12px;cursor:pointer;font-size:.92em;border-bottom:1px solid #f1f5f9;white-space:nowrap;">${esc(n)}</div>`).join('');
+}
+function _persDDFilter(){
+  const inp=document.getElementById('persSec'); if(!inp)return;
+  const q=(inp.value||'').toLocaleLowerCase('tr');
+  const list=q?_persNames.filter(n=>n.toLocaleLowerCase('tr').includes(q)):_persNames;
+  _persDDRender(list);   // tamamı listelenir; kutu kendi içinde scroll eder
+  const dd=document.getElementById('persDD'); if(dd)dd.style.display='block';
+}
+function _persDDOpen(){ if(!_persNames.length)buildPersDatalist(); _persDDFilter(); }
+function _persDDPick(name){
+  document.getElementById('persSec').value=name;
+  const dd=document.getElementById('persDD'); if(dd)dd.style.display='none';
+  renderPersonelKart();
 }
 function renderPersonelKart(){
   const ad=document.getElementById('persSec').value.trim();
@@ -3196,6 +3224,8 @@ document.getElementById('kopyaModal').addEventListener('click',e=>{if(e.target.i
 document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
 document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
 document.getElementById('kpiPolModal').addEventListener('click',e=>{if(e.target.id==='kpiPolModal')closeKpiPol();});
+// Özel personel açılır listesi: dışarı tıklanınca kapat
+document.addEventListener('mousedown',e=>{const dd=document.getElementById('persDD');if(!dd||dd.style.display==='none')return;const wrap=dd.parentElement;if(wrap&&!wrap.contains(e.target))dd.style.display='none';});
 function closeAllMenus(){document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('show'));}
 function toggleMenu(id){const m=document.getElementById(id);const open=m.classList.contains('show');closeAllMenus();if(!open)m.classList.add('show');}
 document.addEventListener('click',e=>{
