@@ -756,10 +756,15 @@
   <div class="modal" style="max-width:520px;">
     <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);"><h3>🎯 Eğitim KPI Hedefleri</h3><button class="modal-x" onclick="closeKpi()">✕</button></div>
     <div class="modal-body">
-      <div class="muted" style="font-size:.85em;margin-bottom:14px;">Firma geneli hedefler. Gösterge Paneli'nde gerçekleşmeyle karşılaştırılır.</div>
+      <div class="muted" style="font-size:.85em;margin-bottom:10px;">Hedefleri <b>lokasyon</b> ve <b>yıl</b> bazında tanımlayabilirsiniz. "Genel" seçilirse firma geneli / yıldan bağımsız hedef olur. Gösterge Paneli, seçili lokasyon+yıla <b>en uygun</b> hedefi kullanır (özel yoksa genele iner).</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;background:#ecfeff;border:1px solid #a5f3fc;border-radius:8px;padding:10px;">
+        <div class="fgroup" style="flex:1;margin:0;"><label style="font-size:.82em;">📍 Lokasyon Kapsamı</label><select id="kpiLokScope" onchange="_kpiLoadScope()"></select></div>
+        <div class="fgroup" style="flex:1;margin:0;"><label style="font-size:.82em;">📅 Yıl Kapsamı</label><select id="kpiYilScope" onchange="_kpiLoadScope()"></select></div>
+      </div>
       <div class="fgroup"><label>Kişi Başı Yıllık Eğitim Saati Hedefi</label><input type="number" id="kpiKisiSaat" step="1" min="0" placeholder="örn. 16"></div>
       <div class="fgroup"><label>Yıllık Plan Gerçekleşme Oranı Hedefi (%)</label><input type="number" id="kpiOran" step="1" min="0" max="100" placeholder="örn. 90"></div>
       <div class="fgroup"><label>Aylık Toplam Adam·Saat Hedefi <span class="muted">(opsiyonel)</span></label><input type="number" id="kpiAySaat" step="1" min="0" placeholder="örn. 100"></div>
+      <div class="muted" id="kpiScopeHint" style="font-size:.8em;margin-top:2px;color:#0e7490;font-weight:600;"></div>
     </div>
     <div class="modal-foot">
       <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="closeKpi()">İptal</button>
@@ -1808,7 +1813,7 @@ function renderDash(){
   document.getElementById('dOran').textContent='%'+oran.toFixed(0);
   document.getElementById('dKisiSaat').textContent=kisiSaat.toFixed(1);
   // --- KPI hedef karşılaştırma ---
-  const hKisiSaat=parseFloat(AYAR.kpi_kisi_yil_saat)||0, hOran=parseFloat(AYAR.kpi_oran)||0;
+  const hKisiSaat=parseFloat(kpiGet('kpi_kisi_yil_saat',lok,yil))||0, hOran=parseFloat(kpiGet('kpi_oran',lok,yil))||0;
   document.getElementById('dKisiSaatL').textContent=hKisiSaat?`Kişi Başı Saat (hedef ${hKisiSaat})`:'Kişi Başı Saat';
   document.getElementById('dKisiSaat').style.color=hKisiSaat?(kisiSaat>=hKisiSaat?'#16a34a':'#e11d48'):'#1e7e4a';
   document.getElementById('dOran').style.color=hOran?(oran>=hOran?'#16a34a':'#e11d48'):'#d97706';
@@ -1831,7 +1836,7 @@ function renderDash(){
   const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
   ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
-  const hAy=parseFloat(AYAR.kpi_ay_saat)||0;
+  const hAy=parseFloat(kpiGet('kpi_ay_saat',lok,yil))||0;
   const aylikDs=[
     {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
     {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}];
@@ -1917,9 +1922,10 @@ function renderDash(){
     kyMap[r.yil].s+=num(r.sure); kyMap[r.yil].k.add(r.personel_guid||r.personel);
   });
   const kyE=Object.entries(kyMap).sort((a,b)=>a[0].localeCompare(b[0]));
-  const hKS=parseFloat(AYAR.kpi_kisi_yil_saat)||0;
   const kisiDs=[{label:'Saat/Kişi',data:kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),color:'#0891b2'}];
-  if(hKS)kisiDs.push({label:`Hedef (${hKS})`,data:kyE.map(()=>hKS),type:'line',color:'#e11d48'});
+  // Hedef çizgisi: her yıl için o yıla (ve seçili lokasyona) özel hedef; yoksa global
+  const hKSarr=kyE.map(x=>parseFloat(kpiGet('kpi_kisi_yil_saat',lok,x[0]))||0);
+  if(hKSarr.some(v=>v>0))kisiDs.push({label:'Hedef',data:hKSarr,type:'line',color:'#e11d48'});
   drawGrouped('chKisiYil',kyE.map(x=>x[0]),kisiDs);
 
   // --- Almayanlar listesi ---
@@ -2560,21 +2566,54 @@ async function silTumDegisiklik(){
 }
 
 // ===================== KPI HEDEFLERİ =====================
+// Kapsamlı anahtar: "<metrik>|<lokasyon>|<yil>"  (boş = genel). Eski düz anahtar ("kpi_oran") = genel.
+// Dashboard çözümü: tam(lok,yıl) -> lok(her yıl) -> yıl(her lok) -> genel -> eski düz anahtar.
+function kpiGet(metric,lok,yil){
+  const cand=[
+    metric+'|'+(lok||'')+'|'+(yil||''),
+    metric+'|'+(lok||'')+'|',
+    metric+'||'+(yil||''),
+    metric+'||',
+    metric
+  ];
+  for(const k of cand){ const v=AYAR[k]; if(v!=null&&v!=='') return v; }
+  return '';
+}
+function _kpiLoadScope(){
+  const lok=document.getElementById('kpiLokScope').value;
+  const yil=document.getElementById('kpiYilScope').value;
+  // Bu kapsama BİREBİR kayıtlı değerleri yükle (düzenleme için fallback yok).
+  // Genel kapsamda eski düz anahtarı da dikkate al.
+  const g=(m)=>{ let v=AYAR[m+'|'+(lok||'')+'|'+(yil||'')]; if((v==null||v==='')&&!lok&&!yil){ v=AYAR[m+'||']!=null&&AYAR[m+'||']!==''?AYAR[m+'||']:AYAR[m]; } return (v==null?'':v); };
+  document.getElementById('kpiKisiSaat').value=g('kpi_kisi_yil_saat');
+  document.getElementById('kpiOran').value=g('kpi_oran');
+  document.getElementById('kpiAySaat').value=g('kpi_ay_saat');
+  document.getElementById('kpiScopeHint').textContent='Düzenlenen kapsam: '+(lok||'Tüm Lokasyonlar')+' · '+(yil||'Tüm Yıllar');
+}
 function openKpi(){
-  document.getElementById('kpiKisiSaat').value=AYAR.kpi_kisi_yil_saat||'';
-  document.getElementById('kpiOran').value=AYAR.kpi_oran||'';
-  document.getElementById('kpiAySaat').value=AYAR.kpi_ay_saat||'';
+  const loks=[...new Set([...POL.map(r=>r.lokasyon),...EGT.map(r=>r.lokasyon)].filter(Boolean))].sort();
+  const yils=[...new Set(EGT.map(r=>r.yil).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+  document.getElementById('kpiLokScope').innerHTML='<option value="">Genel (Tüm Lokasyonlar)</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  document.getElementById('kpiYilScope').innerHTML='<option value="">Genel (Tüm Yıllar)</option>'+yils.map(y=>`<option value="${esc(y)}">${esc(y)}</option>`).join('');
+  // Dashboard'da seçili lok/yıl varsa varsayılan getir (sezgisel)
+  const dLok=document.getElementById('dashLok').value, dYil=document.getElementById('dashYil').value;
+  if(dLok&&loks.includes(dLok))document.getElementById('kpiLokScope').value=dLok;
+  if(dYil&&yils.includes(dYil))document.getElementById('kpiYilScope').value=dYil;
+  _kpiLoadScope();
   document.getElementById('kpiModal').classList.add('show');
 }
 function closeKpi(){document.getElementById('kpiModal').classList.remove('show');}
 async function kaydetKpi(){
+  const lok=document.getElementById('kpiLokScope').value;
+  const yil=document.getElementById('kpiYilScope').value;
+  const sk=(m)=>m+'|'+(lok||'')+'|'+(yil||'');
   const rows=[
-    {anahtar:'kpi_kisi_yil_saat',deger:document.getElementById('kpiKisiSaat').value||''},
-    {anahtar:'kpi_oran',deger:document.getElementById('kpiOran').value||''},
-    {anahtar:'kpi_ay_saat',deger:document.getElementById('kpiAySaat').value||''}
+    {anahtar:sk('kpi_kisi_yil_saat'),deger:document.getElementById('kpiKisiSaat').value||''},
+    {anahtar:sk('kpi_oran'),deger:document.getElementById('kpiOran').value||''},
+    {anahtar:sk('kpi_ay_saat'),deger:document.getElementById('kpiAySaat').value||''}
   ];
   rows.forEach(r=>AYAR[r.anahtar]=r.deger); closeKpi(); renderDash();
-  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 KPI hedefleri kaydedildi','#16a34a',2000);}
+  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 KPI kaydedildi ('+(lok||'Tüm Lok.')+' · '+(yil||'Tüm Yıllar')+')','#16a34a',2200);}
   catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
 }
 function openKpiPol(){
