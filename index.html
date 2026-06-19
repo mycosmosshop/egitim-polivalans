@@ -2006,10 +2006,14 @@ function polFiltered(){
   const durum=document.getElementById('polDurum').value;
   return POL.filter(r=>{
     if(_polSadceAktif){
+      const g=normG(r.personel_guid||r.personel||'');
+      // El ile pasif isaretlenmis
+      if(PASIF_GUIDS.has(g))return false;
       // cikis_tar dolu ve gecmiste ise cikmiş say
       if(r.cikis_tar&&r.cikis_tar<=bugun())return false;
-      // El ile pasif isaretlenmis
-      if(PASIF_GUIDS.has(normG(r.personel_guid||r.personel||'')))return false;
+      // PER001 guncel personel roster'i (varsa): yalnizca su an calisanlar
+      // (cikis_tar cogu eski kayitta bos oldugundan tek basina yetersiz)
+      if(AKTIF_GUIDS&&!AKTIF_GUIDS.has(g))return false;
     }
     if(dept&&r.departman!==dept)return false;
     if(lok&&r.lokasyon!==lok)return false;
