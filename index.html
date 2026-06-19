@@ -241,7 +241,7 @@
           <option value="planli">🎓 Eğitim Planlı</option>
           <option value="degerli">📋 Değerlendirilmiş</option>
         </select>
-        <button id="polAktifBtn" class="btn" style="background:#dcfce7;color:#166534;" onclick="togglePolAktif()" title="Aktif/tüm personel">👤 Aktif</button>
+        <button id="polAktifBtn" class="btn" style="background:#e2e8f0;color:#334155;" onclick="togglePolAktif()" title="Aktif/tüm personel">👥 Tümü</button>
         <button id="polGrupBtn" class="btn" style="background:#e2e8f0;color:#334155;" onclick="_polGruplu=!_polGruplu;_polAcikGruplar.clear();document.getElementById('polGrupBtn').textContent=_polGruplu?'☰ Detaylı':'▤ Gruplu';renderPol()">▤ Gruplu</button>
         <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="exportXlsx('pol')">📊 Excel</button>
         <div class="dropdown admin-only">
@@ -2015,7 +2015,7 @@ function egitimOneri(mevcut,hedef){
   else o+='İşbaşı eğitimi + uygulamalı pratik, sonrasında yetkinlik değerlendirmesi.';
   return o;
 }
-let _polSadceAktif=true;
+let _polSadceAktif=false;   // Polivalans varsayilan: TÜMÜ (yetkinlik matrisinde tüm personel görünsün; Aktif filtresi opsiyonel)
 let _polGruplu=false;
 let _polAcikGruplar=new Set();
 function togglePolAktif(){
