@@ -118,7 +118,7 @@
     <div class="stats">
       <div class="stat blue"><div class="v" id="dAdamSaat">—</div><div class="l">Gerçekleşen Adam·Saat</div></div>
       <div class="stat"><div class="v" id="dPlanSaat">—</div><div class="l">Planlanan Adam·Saat</div></div>
-      <div class="stat amber"><div class="v" id="dOran">—</div><div class="l">Gerçekleşme Oranı</div></div>
+      <div class="stat amber"><div class="v" id="dOran">—</div><div class="l" id="dOranL">Gerçekleşme Oranı</div></div>
       <div class="stat"><div class="v" id="dKisiSaat">—</div><div class="l" id="dKisiSaatL">Kişi Başı Saat</div></div>
       <div class="stat"><div class="v" id="dKpi">—</div><div class="l" id="dKpiL">KPI Hedef Durumu</div></div>
       <div class="stat"><div class="v" id="dKisi">—</div><div class="l">Eğitim Alan Kişi</div></div>
@@ -1825,8 +1825,9 @@ function renderDash(){
   document.getElementById('dKisiSaat').textContent=kisiSaat.toFixed(1);
   // --- KPI hedef karşılaştırma ---
   const hKisiSaat=parseFloat(kpiGet('kpi_kisi_yil_saat',lok,yil))||0, hOran=parseFloat(kpiGet('kpi_oran',lok,yil))||0;
-  document.getElementById('dKisiSaatL').textContent=hKisiSaat?`Kişi Başı Saat (hedef ${hKisiSaat})`:'Kişi Başı Saat';
+  document.getElementById('dKisiSaatL').textContent=hKisiSaat?`Kişi Başı Saat (Hedef ${hKisiSaat})`:'Kişi Başı Saat';
   document.getElementById('dKisiSaat').style.color=hKisiSaat?(kisiSaat>=hKisiSaat?'#16a34a':'#e11d48'):'#1e7e4a';
+  document.getElementById('dOranL').textContent=hOran?`Gerçekleşme Oranı (Hedef %${hOran})`:'Gerçekleşme Oranı';
   document.getElementById('dOran').style.color=hOran?(oran>=hOran?'#16a34a':'#e11d48'):'#d97706';
   const dKpiEl=document.getElementById('dKpi'), dKpiLEl=document.getElementById('dKpiL');
   if(!hKisiSaat&&!hOran){dKpiEl.textContent='—';dKpiLEl.textContent='KPI hedefi tanımsız';dKpiEl.style.color='#94a3b8';}
