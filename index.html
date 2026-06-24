@@ -2983,11 +2983,11 @@ async function topluEgtSil(){
 async function topluOtoDeger(){
   const aday=egtFiltered().filter(r=>!r._plan&&r.gerceklesme&&!DEGER.has(r.uid));
   if(!aday.length){toast('Değerlendirilecek (gerçekleşmiş, boş) eğitim yok','#d97706',2800);return;}
-  if(!confirm(`${aday.length} eğitim kaydı OLUMLU (Etkili) ve ${bugun()} tarihli olarak otomatik değerlendirilecek. Devam?`))return;
+  if(!confirm(`${aday.length} eğitim kaydı OLUMLU (Etkili) olarak otomatik değerlendirilecek.\n• Değerlendirme Tarihi = EĞİTİM TARİHİ\n• Değerlendiren = EĞİTİCİ\nDevam?`))return;
   const rows=aday.map(r=>({uid:r.uid,etk_uygulama:'Evet',etk_hedef:'Evet',etk_performans:'Evet',
-    etkinlik_sonuc:'Etkili',deger_tarihi:bugun(),degerlendiren:'Otomatik'}));
+    etkinlik_sonuc:'Etkili',deger_tarihi:(r.kayit_tarih||r.plan_tarih||bugun()),degerlendiren:(r.egitici||'Otomatik')}));
   rows.forEach(rec=>DEGER.set(rec.uid,rec)); renderEgt(); renderDash(); updateChgCount();
-  try{await _batchUpsert('egt_degerlendirme',rows,'uid');toast(`✅ ${rows.length} eğitim değerlendirildi (${bugun()})`,'#16a34a',2500);}
+  try{await _batchUpsert('egt_degerlendirme',rows,'uid');toast(`✅ ${rows.length} eğitim otomatik değerlendirildi (eğitim tarihi · eğitici)`,'#16a34a',2500);}
   catch(e){toast('❌ '+e.message,'#dc2626',5000);}
 }
 async function topluOtoPolDeger(){
