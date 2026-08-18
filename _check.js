@@ -1,0 +1,1557 @@
+
+const SUPA='https://nnubrxbpthmkitueixbh.supabase.co';
+const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWJyeGJwdGhta2l0dWVpeGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI2MDIsImV4cCI6MjA5NjEzODYwMn0.CHZUOylf_q8kkOQbFf9VWZ6-doUTlynmAhahM2EuImE';
+let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4)
+let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
+let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
+let _modalUid=null;
+let PDEGER=new Map();                   // PDEGER: "guid|makine_kodu" -> {checklist,hesaplanan_seviye,deger_tarihi,...}
+let POL_BY_KEY=new Map();               // "guid|makine_kodu" -> polivalans kaydı
+let _polModalKey=null;
+let PLAN=new Map();                     // PLAN: "guid|makine_kodu" -> planlanan eğitim
+let _planKey=null;
+let _polSel=new Set();                  // toplu seçim (polivalans key'leri)
+let _planBulk=false;                    // toplu eğitim planla modu (polivalans)
+let _almSel=new Set();                  // eğitim almayanlar toplu seçim (guid)
+let _planAlmayan=false;                 // almayanlara toplu eğitim planla modu
+let AYAR={};                            // KPI hedefleri vb. (egt_ayar)
+let _planHedefAuto=false;               // hedef gap'lerine toplu eğitim planla modu
+// Yetkinlik seviye kriterleri (checklist) - makineden bağımsız genel kriterler
+const PKRITER={
+  1:['Makine/konu hakkında temel teorik bilgiye sahip','Güvenlik kurallarını ve talimatları biliyor','Gözetim altında temel işlemleri yapabiliyor'],
+  2:['Kısmi gözetimle bağımsız çalışabiliyor','Sık karşılaşılan durumları yönetebiliyor','Temel ayar/kurulum ve bakımı yapabiliyor'],
+  3:['Tam bağımsız çalışabiliyor','Arıza/sorun giderme yapabiliyor','Kalite standartlarını sağlıyor ve kendi işini kontrol ediyor','Çalışma talimatlarına tam hâkim'],
+  4:['Başkalarına öğretebiliyor / eğitim verebiliyor','Süreç iyileştirme önerileri geliştirebiliyor','Tüm istisnai/karmaşık durumları yönetebiliyor','Standart ve talimat belirleyebiliyor']
+};
+let polSort={k:'personel',dir:1}, egtSort={k:'yil',dir:-1};
+const SEVIYE={0:'Yetkinlik yok',1:'Başlangıç',2:'Gelişmekte',3:'Yetkin',4:'Uzman'};
+let charts={};
+const AYLAR=['Oca','Şub','Mar','Nis','May','Haz','Tem','Ağu','Eyl','Eki','Kas','Ara'];
+const PALETTE=['#1e7e4a','#2563eb','#d97706','#9333ea','#0891b2','#dc2626','#65a30d','#db2777','#475569','#ca8a04'];
+
+function toast(msg,color='#1e7e4a',ms=3500){const t=document.getElementById('toast');t.textContent=msg;t.style.background=color;t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',ms);}
+function esc(s){return (s==null?'':String(s)).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+function opts(arr){return arr.map(v=>`<option>${esc(v)}</option>`).join('');}
+
+async function fetchAll(table,select){
+  const rows=[],PAGE=1000;
+  for(let from=0;;from+=PAGE){
+    const res=await fetch(`${SUPA}/rest/v1/${table}?select=${select}&offset=${from}&limit=${PAGE}`,
+      {headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    if(!res.ok){throw new Error(table+' HTTP '+res.status+': '+(await res.text()).slice(0,150));}
+    const b=await res.json(); rows.push(...b); if(b.length<PAGE)break;
+  }
+  return rows;
+}
+
+async function loadAll(notify){
+  try{
+    if(notify)toast('Veriler yükleniyor...','#3b82f6',2000);
+    let hedefRows=[],degerRows=[],polDegerRows=[],planRows=[];
+    [POL,EGT,hedefRows,degerRows,polDegerRows,planRows]=await Promise.all([
+      fetchAll('egt_polivalans','*'),
+      fetchAll('egt_egitim','*'),
+      fetchAll('egt_hedef','id,hedef').catch(()=>[]),        // tablo yoksa sessizce boş
+      fetchAll('egt_degerlendirme','*').catch(()=>[]),
+      fetchAll('egt_polivalans_deger','*').catch(()=>[]),
+      fetchAll('egt_plan','*').catch(()=>[])
+    ]);
+    try{ const ar=await fetchAll('egt_ayar','*'); AYAR={}; ar.forEach(r=>AYAR[r.anahtar]=r.deger); }catch(e){ AYAR={}; }
+    // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
+    const _pm=new Map();
+    POL.forEach(r=>{
+      const k=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const e=_pm.get(k);
+      if(!e||String(r.tarih||'')>String(e.tarih||'')||(String(r.tarih||'')===String(e.tarih||'')&&(+r.pol_inckey||0)>(+e.pol_inckey||0))) _pm.set(k,r);
+    });
+    POL=[..._pm.values()];
+    HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
+    DEGER=new Map(degerRows.map(r=>[r.uid,r]));
+    PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
+    PLAN=new Map(planRows.map(r=>[r.id,r]));
+    EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
+    POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
+    buildFilters(); renderDash(); renderPol(); renderEgt(); updateChgCount();
+    if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
+  }catch(e){
+    console.error(e);
+    toast('❌ Yükleme hatası: '+e.message+' (Tablolar/lokasyon kolonu oluşturulmuş mu?)','#dc2626',7000);
+  }
+}
+
+function buildFilters(){
+  const depts=[...new Set(POL.map(r=>r.departman).filter(Boolean))].sort();
+  const polLoks=[...new Set(POL.map(r=>r.lokasyon).filter(Boolean))].sort();
+  const egtLoks=[...new Set(EGT.map(r=>r.lokasyon).filter(Boolean))].sort();
+  const allLoks=[...new Set([...polLoks,...egtLoks])].sort();
+  const yils=[...new Set(EGT.map(r=>r.yil).filter(Boolean))].sort((a,b)=>b.localeCompare(a));
+  document.getElementById('polDept').innerHTML='<option value="">Tüm Departmanlar</option>'+opts(depts);
+  document.getElementById('polLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
+  document.getElementById('egtLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(egtLoks);
+  document.getElementById('egtYil').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
+  document.getElementById('dashYil').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
+  document.getElementById('dashLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(allLoks);
+  // Manuel giriş datalist'leri
+  const pers=[...new Set(POL.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('mPersList').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
+  document.getElementById('mDeptList').innerHTML=opts(depts);
+  document.getElementById('mLokList').innerHTML=opts(allLoks);
+  document.getElementById('pdLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
+  document.getElementById('pdDept').innerHTML='<option value="">Tüm Departmanlar</option>'+opts(depts);
+  document.getElementById('persLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(polLoks);
+  document.getElementById('persYilF').innerHTML='<option value="">Tüm Yıllar (eğitim)</option>'+opts(yils);
+  document.getElementById('konuLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+opts(allLoks);
+  document.getElementById('konuYilF').innerHTML='<option value="">Tüm Yıllar</option>'+opts(yils);
+}
+
+// ===================== POLİVALANS PANELİ =====================
+function renderPolDash(){
+  const lok=document.getElementById('pdLok').value;
+  const dept=document.getElementById('pdDept').value;
+  const p=POL.filter(r=>(!lok||r.lokasyon===lok)&&(!dept||r.departman===dept));
+  const yetler=p.map(r=>+r.yetenek||0).filter(v=>v>0);
+  const ort=yetler.length?(yetler.reduce((s,v)=>s+v,0)/yetler.length):0;
+  let hedefli=0,gapli=0;
+  p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  // makine bazlı yetkin (sv3+) sayıları
+  const mkY=new Map(); p.forEach(r=>{const k=r.makine_kodu||r.makine_adi;if(!mkY.has(k))mkY.set(k,0);if((+r.yetenek||0)>=3)mkY.set(k,mkY.get(k)+1);});
+  const makSay=mkY.size, kritikSay=[...mkY.values()].filter(v=>v<=1).length;
+  const kritikOran=makSay?(kritikSay/makSay*100):0;
+  const yetkinSay=p.filter(r=>(+r.yetenek||0)>=3).length, yetkinOran=p.length?(yetkinSay/p.length*100):0;
+  document.getElementById('pdYetk').textContent=p.length.toLocaleString('tr');
+  document.getElementById('pdPers').textContent=new Set(p.map(r=>r.personel)).size;
+  document.getElementById('pdOrt').textContent=ort?ort.toFixed(2):'—';
+  document.getElementById('pdYetkin').textContent='%'+yetkinOran.toFixed(0);
+  document.getElementById('pdKritik').textContent=kritikSay+(makSay?` (%${kritikOran.toFixed(0)})`:'');
+  document.getElementById('pdInfo').textContent=`${makSay} makine · ${hedefli} hedefli · ${gapli} eğitim gereken`;
+  // --- Polivalans KPI hedef karşılaştırma ---
+  const hOrt=parseFloat(AYAR.kpi_pol_ort)||0, hYetkin=parseFloat(AYAR.kpi_pol_yetkin)||0, hKritik=parseFloat(AYAR.kpi_pol_kritik);
+  document.getElementById('pdOrtL').textContent=hOrt?`Ort. Yetkinlik (hedef ${hOrt})`:'Ort. Yetkinlik';
+  document.getElementById('pdOrt').style.color=hOrt?(ort>=hOrt?'#16a34a':'#e11d48'):'#d97706';
+  document.getElementById('pdYetkinL').textContent=hYetkin?`Yetkin Kapsama (hedef %${hYetkin})`:'Yetkin Kapsama (Sv3-4)';
+  document.getElementById('pdYetkin').style.color=hYetkin?(yetkinOran>=hYetkin?'#16a34a':'#e11d48'):'#2563eb';
+  document.getElementById('pdKritikL').textContent=(!isNaN(hKritik))?`Kritik Makine (maks %${hKritik})`:'Kritik Makine (≤1 yetkin)';
+  document.getElementById('pdKritik').style.color=(!isNaN(hKritik))?(kritikOran<=hKritik?'#16a34a':'#e11d48'):'#e11d48';
+  const pdKpiEl=document.getElementById('pdKpi');
+  if(!hOrt&&!hYetkin&&isNaN(hKritik)){pdKpiEl.textContent='—';pdKpiEl.style.color='#94a3b8';}
+  else{let t=0,n=0;
+    if(hOrt){n++;if(ort>=hOrt)t++;} if(hYetkin){n++;if(yetkinOran>=hYetkin)t++;} if(!isNaN(hKritik)){n++;if(kritikOran<=hKritik)t++;}
+    pdKpiEl.textContent=t+'/'+n; pdKpiEl.style.color=t===n?'#16a34a':t>0?'#d97706':'#e11d48';}
+  // seviye dağılımı
+  const yetC=[0,0,0,0]; p.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
+  drawDoughnut('pdChSev',['1 - Başlangıç','2 - Gelişmekte','3 - Yetkin','4 - Uzman'],yetC,['#ef4444','#f59e0b','#3b82f6','#16a34a']);
+  // hedef durumu
+  const ok=hedefli-gapli, hedefsiz=p.length-hedefli;
+  drawDoughnut('pdChHedef',['✓ Karşılanan','⚠ Eğitim Gereken','Hedefsiz'],[ok,gapli,hedefsiz],['#16a34a','#e11d48','#cbd5e1']);
+  // departman bazlı ortalama yetkinlik
+  const deptMap={}; p.forEach(r=>{const D=r.departman||'(Belirsiz)';(deptMap[D]=deptMap[D]||[]).push(+r.yetenek||0);});
+  const deptE=Object.entries(deptMap).map(([k,v])=>[k,v.reduce((s,x)=>s+x,0)/v.length]).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  drawBar('pdChDept','Ort. Yetkinlik',deptE.map(x=>x[0]),deptE.map(x=>+x[1].toFixed(2)),'#0891b2',true);
+  // lokasyon bazlı ortalama yetkinlik
+  const lokMap={}; p.forEach(r=>{const L=r.lokasyon||'(Belirsiz)';(lokMap[L]=lokMap[L]||[]).push(+r.yetenek||0);});
+  const lokE=Object.entries(lokMap).map(([k,v])=>[k,v.reduce((s,x)=>s+x,0)/v.length]).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  drawBar('pdChLok','Ort. Yetkinlik',lokE.map(x=>x[0]),lokE.map(x=>+x[1].toFixed(2)),'#2563eb',true);
+  // en çok uzman (sv4) olunan makineler
+  const uzMap={}; p.filter(r=>+r.yetenek===4).forEach(r=>{const M=r.makine_adi||'(Belirsiz)';uzMap[M]=(uzMap[M]||0)+1;});
+  const uzE=Object.entries(uzMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  drawBar('pdChUzman','Uzman Personel',uzE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),uzE.map(x=>x[1]),'#16a34a',true);
+  // eğitim gereken makineler (en çok gap)
+  const gapMap={}; p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h&&(+r.yetenek||0)<h){const M=r.makine_adi||'(Belirsiz)';gapMap[M]=(gapMap[M]||0)+1;}});
+  const gapE=Object.entries(gapMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  drawBar('pdChGap','Gap Sayısı',gapE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),gapE.map(x=>x[1]),'#e11d48',true);
+  // makine yetkinlik kapsama / yedekleme: her makine için yetkin (sv3-4) kişi sayısı
+  const mkMap=new Map();
+  p.forEach(r=>{
+    const k=r.makine_kodu||r.makine_adi; if(!mkMap.has(k)) mkMap.set(k,{adi:r.makine_adi,grup:r.makinegrup_adi,toplam:0,yetkin:0,uzman:0});
+    const m=mkMap.get(k); m.toplam++; const y=+r.yetenek||0; if(y>=3)m.yetkin++; if(y===4)m.uzman++;
+  });
+  const yf=document.getElementById('pdYedekF').value;
+  let mkArr=[...mkMap.values()];
+  if(yf==='kritik') mkArr=mkArr.filter(m=>m.yetkin<=1);
+  else if(yf==='iyi') mkArr=mkArr.filter(m=>m.yetkin>=2);
+  mkArr.sort((a,b)=>a.yetkin-b.yetkin||String(a.adi).localeCompare(String(b.adi),'tr'));
+  document.getElementById('pdYedekInfo').textContent=`${mkMap.size} makine/proses · ${kritikSay} tanesi kritik (≤1 yetkin kişi)`;
+  document.getElementById('pdYedekBody').innerHTML=mkArr.slice(0,500).map(m=>{
+    const dur = m.yetkin===0 ? '<span class="badge b-no">🔴 Yetkin yok</span>'
+      : m.yetkin===1 ? '<span class="badge" style="background:#fef3c7;color:#92400e;">🟡 Tek kişiye bağımlı</span>'
+      : '<span class="badge b-ok">🟢 Yedekli</span>';
+    return `<tr><td>${esc(m.adi)}</td><td class="muted">${esc(m.grup||'')}</td><td>${m.toplam}</td>
+      <td><b>${m.yetkin}</b></td><td>${m.uzman}</td><td>${dur}</td></tr>`;
+  }).join('')||'<tr><td colspan="6" class="muted">Kayıt yok</td></tr>';
+}
+
+// ===================== MANUEL GİRİŞ (admin) =====================
+function slug(s){return (s||'').toLowerCase().replace(/[^a-z0-9çğıöşü]+/gi,'_').replace(/^_|_$/g,'');}
+function openMPol(){
+  document.getElementById('mPolPersonel').value='';document.getElementById('mPolMakine').value='';
+  document.getElementById('mPolKod').value='';document.getElementById('mPolYet').value='4';
+  document.getElementById('mPolDept').value='';document.getElementById('mPolLok').value='';document.getElementById('mPolGrup').value='';
+  document.getElementById('mPolModal').classList.add('show');
+}
+function closeMPol(){document.getElementById('mPolModal').classList.remove('show');}
+async function kaydetMPol(){
+  const personel=document.getElementById('mPolPersonel').value.trim();
+  const makine=document.getElementById('mPolMakine').value.trim();
+  if(!personel||!makine){toast('⚠ Personel ve makine/konu gerekli','#d97706',2500);return;}
+  const guid='man_'+slug(personel);
+  const kod=document.getElementById('mPolKod').value.trim()||('MAN_'+slug(makine));
+  const rec={pol_inckey:-Date.now(),personel_guid:guid,personel:personel,makine_kodu:kod,makine_adi:makine,
+    makinegrup_adi:document.getElementById('mPolGrup').value.trim()||'(Manuel)',makinegrup_kodu:null,
+    yetenek:+document.getElementById('mPolYet').value,guncel:1,tarih:bugun(),
+    departman:document.getElementById('mPolDept').value.trim()||null,lokasyon:document.getElementById('mPolLok').value.trim()||null,
+    proses:null,gorev:null,aciklama:null,kaynak:'manuel'};
+  POL.push(rec); POL_BY_KEY.set(guid+'|'+kod,rec); closeMPol(); buildFilters(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('✏️ Manuel yetkinlik eklendi','#16a34a',1800);
+  }catch(e){toast('❌ Eklenemedi (kaynak kolonu eklendi mi?): '+e.message,'#dc2626',5000);}
+}
+let _mEgtSel=new Map(), _mEgtAllPers=[];
+function openMEgt(){
+  ['mEgtKonu','mEgtSure','mEgtEgitici','mEgtLok','mEgtSearch'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('mEgtTarih').value=bugun();
+  document.getElementById('mEgtTur').value='İç Eğitim';
+  document.getElementById('mEgtDurum').value='1';
+  _mEgtSel.clear();
+  // Polivalans verisinden benzersiz personel listesi (guid+isim+lokasyon)
+  const seen=new Map();
+  POL.forEach(r=>{const g=r.personel_guid||(r.personel?'man_'+slug(r.personel):'');if(r.personel&&g&&!seen.has(g))seen.set(g,{guid:g,personel:r.personel,lokasyon:r.lokasyon||''});});
+  _mEgtAllPers=[...seen.values()].sort((a,b)=>a.personel.localeCompare(b.personel,'tr'));
+  const loks=[...new Set(_mEgtAllPers.map(p=>p.lokasyon).filter(Boolean))].sort();
+  document.getElementById('mEgtLokF').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  _renderMEgtList(); _renderMEgtChips();
+  document.getElementById('mEgtModal').classList.add('show');
+}
+function closeMEgt(){document.getElementById('mEgtModal').classList.remove('show');}
+function _renderMEgtList(){
+  const lok=document.getElementById('mEgtLokF').value;
+  const q=(document.getElementById('mEgtSearch').value||'').toLowerCase();
+  let list=_mEgtAllPers;
+  if(lok) list=list.filter(p=>p.lokasyon===lok);
+  if(q) list=list.filter(p=>p.personel.toLowerCase().includes(q));
+  const allVis=list.length>0&&list.every(p=>_mEgtSel.has(p.guid));
+  document.getElementById('mEgtSelAllBtn').textContent=allVis?'Seçimi Kaldır':'Tümünü Seç';
+  document.getElementById('mEgtPerList').innerHTML=list.length
+    ?list.map(p=>{const chk=_mEgtSel.has(p.guid);return`<label style="display:flex;align-items:center;gap:6px;padding:5px 8px;cursor:pointer;border-radius:4px;background:${chk?'#f0fdf4':'transparent'};"><input type="checkbox" ${chk?'checked':''} onchange="_toggleMEgtPer('${p.guid}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"><span style="flex:1;font-size:.9em;">${esc(p.personel)}</span>${p.lokasyon?`<span style="font-size:.75em;color:#94a3b8;">${esc(p.lokasyon)}</span>`:''}</label>`;}).join('')
+    :'<div style="padding:8px 12px;color:#94a3b8;font-size:.85em;">Personel bulunamadı</div>';
+  document.getElementById('mEgtSelInfo').textContent=`· ${_mEgtSel.size} seçili · ${list.length} listeleniyor`;
+}
+function _toggleMEgtPer(guid,checked){
+  const p=_mEgtAllPers.find(x=>x.guid===guid); if(!p) return;
+  if(checked) _mEgtSel.set(guid,{personel:p.personel,lokasyon:p.lokasyon});
+  else _mEgtSel.delete(guid);
+  // lokasyon filtresi seçiliyse kayıt lokasyonunu otomatik doldur
+  const lokF=document.getElementById('mEgtLokF').value;
+  if(lokF&&!document.getElementById('mEgtLok').value) document.getElementById('mEgtLok').value=lokF;
+  _renderMEgtList(); _renderMEgtChips();
+}
+function _removeMEgtPer(guid){_mEgtSel.delete(guid);_renderMEgtList();_renderMEgtChips();}
+function _mEgtSelAll(){
+  const lok=document.getElementById('mEgtLokF').value;
+  const q=(document.getElementById('mEgtSearch').value||'').toLowerCase();
+  let list=_mEgtAllPers;
+  if(lok) list=list.filter(p=>p.lokasyon===lok);
+  if(q) list=list.filter(p=>p.personel.toLowerCase().includes(q));
+  const allVis=list.length>0&&list.every(p=>_mEgtSel.has(p.guid));
+  if(allVis) list.forEach(p=>_mEgtSel.delete(p.guid));
+  else list.forEach(p=>_mEgtSel.set(p.guid,{personel:p.personel,lokasyon:p.lokasyon}));
+  const lokF=document.getElementById('mEgtLokF').value;
+  if(lokF&&!document.getElementById('mEgtLok').value) document.getElementById('mEgtLok').value=lokF;
+  _renderMEgtList(); _renderMEgtChips();
+}
+function _renderMEgtChips(){
+  const arr=[..._mEgtSel.entries()];
+  document.getElementById('mEgtChips').innerHTML=arr.length
+    ?arr.map(([guid,v])=>`<span style="display:inline-flex;align-items:center;gap:3px;background:#ede9fe;color:#5b21b6;border-radius:12px;padding:2px 8px 2px 10px;font-size:.8em;">${esc(v.personel)}<button onclick="_removeMEgtPer('${guid}')" style="background:none;border:none;cursor:pointer;color:#7c3aed;font-size:1em;padding:0 0 0 3px;line-height:1;">✕</button></span>`).join('')
+    :'<span style="color:#94a3b8;font-size:.8em;">Henüz kimse seçilmedi</span>';
+}
+async function kaydetMEgt(){
+  const konu=document.getElementById('mEgtKonu').value.trim();
+  const tarih=document.getElementById('mEgtTarih').value;
+  if(!konu||!tarih){toast('⚠ Konu ve tarih gerekli','#d97706',2500);return;}
+  if(_mEgtSel.size===0){toast('⚠ En az bir katılımcı seçin','#d97706',2500);return;}
+  const ger=document.getElementById('mEgtDurum').value==='1';
+  const turu=document.getElementById('mEgtTur').value;
+  const sure=document.getElementById('mEgtSure').value?+document.getElementById('mEgtSure').value:null;
+  const egitici=document.getElementById('mEgtEgitici').value.trim()||null;
+  const lokKayit=document.getElementById('mEgtLok').value.trim()||null;
+  const ts=Date.now();
+  const recs=[..._mEgtSel.entries()].map(([guid,v],i)=>({
+    uid:`man_${ts}_${i}_${guid.slice(-4)}`,plan_inckey:null,yil:tarih.slice(0,4),
+    konu,turu,lokasyon:lokKayit||v.lokasyon||null,
+    plan_tarih:tarih,kayit_tarih:ger?tarih:null,sure,gerceklesme:ger?1:0,
+    personel:v.personel,personel_guid:guid,egitici,kaynak:'manuel'
+  }));
+  recs.forEach(r=>{EGT.push(r);EGT_BY_UID.set(r.uid,r);});
+  closeMEgt(); buildFilters(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(recs)});
+    toast(`✏️ ${recs.length} kişi için eğitim eklendi`,'#16a34a',2000);
+  }catch(e){toast('❌ Eklenemedi: '+e.message,'#dc2626',5000);}
+}
+// ===================== EĞİTİM KOPYALA (Yeni Yıla Aktar) =====================
+let _kopyaSel=new Set(), _kopySessions=[];
+function shiftDateYear(dateStr,fromYear,toYear){
+  if(!dateStr||dateStr.length<10)return dateStr;
+  const newYear=parseInt(dateStr.slice(0,4))+(toYear-fromYear);
+  const md=dateStr.slice(4);
+  if(md==='-02-29'){const lp=newYear%4===0&&(newYear%100!==0||newYear%400===0);return newYear+(lp?'-02-29':'-02-28');}
+  return newYear+md;
+}
+function openKopya(){
+  _kopyaSel.clear();
+  const yillar=[...new Set(EGT.map(r=>r.yil||(r.plan_tarih||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const kaynakHtml=yillar.map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('kpKaynakYil').innerHTML=kaynakHtml;
+  const defKaynak=yillar[0]||'2025';
+  document.getElementById('kpKaynakYil').value=defKaynak;
+  const defHedef=String(parseInt(defKaynak)+1);
+  const hedefSet=[...new Set([...yillar,defHedef])].sort().reverse();
+  document.getElementById('kpHedefYil').innerHTML=hedefSet.map(y=>`<option value="${y}">${y}</option>`).join('');
+  document.getElementById('kpHedefYil').value=defHedef;
+  const loks=[...new Set(EGT.map(r=>r.lokasyon).filter(Boolean))].sort();
+  document.getElementById('kpLok').innerHTML='<option value="">Tüm Lokasyonlar</option>'+loks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  document.getElementById('kpSearch').value='';
+  renderKopyaList();
+  document.getElementById('kopyaModal').classList.add('show');
+}
+function closeKopya(){document.getElementById('kopyaModal').classList.remove('show');}
+function kpKaynakChanged(){
+  const hy=String(parseInt(document.getElementById('kpKaynakYil').value||'2025')+1);
+  const hSel=document.getElementById('kpHedefYil');
+  if([...hSel.options].some(o=>o.value===hy))hSel.value=hy;
+  else{hSel.innerHTML=`<option value="${hy}">${hy}</option>`+hSel.innerHTML;hSel.value=hy;}
+  renderKopyaList();
+}
+function renderKopyaList(){
+  const ky=document.getElementById('kpKaynakYil').value;
+  const hy=document.getElementById('kpHedefYil').value;
+  const lok=document.getElementById('kpLok').value;
+  const q=(document.getElementById('kpSearch').value||'').toLowerCase();
+  // EGT kayıtlarını oturum (konu+tarih) bazında grupla
+  const sesMap=new Map();
+  EGT.forEach(r=>{
+    const yil=r.yil||(r.plan_tarih||'').slice(0,4);
+    if(yil!==ky)return;
+    if(lok&&r.lokasyon!==lok)return;
+    const konu=r.konu||'';
+    if(q&&!konu.toLowerCase().includes(q))return;
+    const tarih=r.plan_tarih||r.kayit_tarih||'';
+    const key=konu+'|||'+tarih;
+    if(!sesMap.has(key))sesMap.set(key,{key,konu,tarih,lok:r.lokasyon||'',tur:r.turu||'',sure:r.sure,egitici:r.egitici||'',pers:[]});
+    const ses=sesMap.get(key);
+    const g=r.personel_guid;
+    if(g&&r.personel&&!ses.pers.find(p=>p.guid===g))
+      ses.pers.push({guid:g,personel:r.personel,lokasyon:r.lokasyon||''});
+    if(!ses.lok&&r.lokasyon)ses.lok=r.lokasyon;
+  });
+  _kopySessions=[...sesMap.values()].sort((a,b)=>a.konu.localeCompare(b.konu,'tr')||a.tarih.localeCompare(b.tarih));
+  document.getElementById('kpList').innerHTML=_kopySessions.length
+    ?_kopySessions.map((s,i)=>{
+        const ht=shiftDateYear(s.tarih,parseInt(ky),parseInt(hy));
+        const chk=_kopyaSel.has(s.key);
+        return`<label style="display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #e2e8f0;background:${chk?'#e0f2fe':'transparent'};">
+          <input type="checkbox" ${chk?'checked':''} onchange="_kopyaToggle(${i},this.checked)" style="cursor:pointer;accent-color:#0891b2;flex-shrink:0;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:.88em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(s.konu)}</div>
+            <div style="font-size:.76em;color:#64748b;">${s.tarih||'—'} → <b style="color:#0369a1;">${ht||'—'}</b>${s.pers.length?` · ${s.pers.length} kişi`:''}${s.egitici?' · '+esc(s.egitici):''}${s.lok?' · '+esc(s.lok):''}</div>
+          </div>
+        </label>`;
+      }).join('')
+    :'<div style="padding:14px;color:#94a3b8;text-align:center;">Bu filtrede eğitim kaydı bulunamadı</div>';
+  _kpUpdateInfo();
+}
+function _kopyaToggle(idx,on){
+  const s=_kopySessions[idx];if(!s)return;
+  if(on)_kopyaSel.add(s.key);else _kopyaSel.delete(s.key);
+  // Sadece o satırın arka planını güncelle (scroll pozisyonu korunur)
+  const labels=document.querySelectorAll('#kpList label');
+  if(labels[idx])labels[idx].style.background=on?'#e0f2fe':'transparent';
+  _kpUpdateInfo();
+}
+function kpSelAll(){
+  const allSel=_kopySessions.length>0&&_kopySessions.every(s=>_kopyaSel.has(s.key));
+  if(allSel)_kopyaSel.clear();else _kopySessions.forEach(s=>_kopyaSel.add(s.key));
+  renderKopyaList();
+}
+function _kpUpdateInfo(){
+  const sel=_kopySessions.filter(s=>_kopyaSel.has(s.key));
+  const kisi=new Set(sel.flatMap(s=>s.pers.map(p=>p.guid)));
+  document.getElementById('kpSelInfo').textContent=sel.length?`${sel.length} eğitim · ${kisi.size} kişi seçili`:'';
+  document.getElementById('kpSummary').textContent=sel.length
+    ?`→ ${document.getElementById('kpHedefYil').value} yılına ${sel.length} eğitim${kisi.size?', '+kisi.size+' katılım kaydı':''} oluşturulacak`:'';}
+async function kaydetKopya(){
+  if(!_kopyaSel.size){toast('⚠ Önce kopyalanacak eğitim seçin','#d97706',2500);return;}
+  const ky=parseInt(document.getElementById('kpKaynakYil').value);
+  const hy=parseInt(document.getElementById('kpHedefYil').value);
+  if(ky===hy){toast('⚠ Kaynak ve hedef yıl aynı olamaz','#d97706',2500);return;}
+  const katilim=document.getElementById('kpKatilim').checked;
+  const sel=_kopySessions.filter(s=>_kopyaSel.has(s.key));
+  const ts=Date.now();
+  const recs=[];
+  sel.forEach((s,si)=>{
+    const ht=shiftDateYear(s.tarih,ky,hy);
+    if(katilim&&s.pers.length){
+      s.pers.forEach((p,pi)=>recs.push({
+        uid:`man_kpy_${ts}_${si}_${pi}`,plan_inckey:null,yil:String(hy),
+        konu:s.konu,turu:s.tur||null,lokasyon:p.lokasyon||s.lok||null,
+        plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+        personel:p.personel,personel_guid:p.guid,egitici:s.egitici||null,kaynak:'manuel'
+      }));
+    }else{
+      recs.push({uid:`man_kpy_${ts}_${si}_0`,plan_inckey:null,yil:String(hy),
+        konu:s.konu,turu:s.tur||null,lokasyon:s.lok||null,
+        plan_tarih:ht,kayit_tarih:null,sure:s.sure||null,gerceklesme:0,
+        personel:null,personel_guid:null,egitici:s.egitici||null,kaynak:'manuel'});
+    }
+  });
+  recs.forEach(r=>{EGT.push(r);EGT_BY_UID.set(r.uid,r);});
+  closeKopya();buildFilters();renderEgt();renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify(recs)});
+    toast(`🔄 ${sel.length} eğitim ${hy} yılına kopyalandı (${recs.length} kayıt)`,'#0891b2',3000);
+  }catch(e){toast('❌ Kopyalanamadı: '+e.message,'#dc2626',5000);}
+}
+
+async function silManuelPol(guid,mk){
+  if(!confirm('Bu manuel yetkinlik kaydı silinsin mi?'))return;
+  const key=guid+'|'+mk; const rec=POL_BY_KEY.get(key);
+  POL=POL.filter(r=>!((r.personel_guid||'')===guid&&(r.makine_kodu||'')===mk)); POL_BY_KEY.delete(key); renderPol();
+  if(rec&&rec.pol_inckey!=null){
+    try{await fetch(`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${rec.pol_inckey}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Silindi','#64748b',1500);}
+    catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+  }
+}
+async function silManuelEgt(uid){
+  if(!confirm('Bu manuel eğitim kaydı silinsin mi?'))return;
+  EGT=EGT.filter(r=>r.uid!==uid); EGT_BY_UID.delete(uid); renderEgt(); renderDash();
+  try{await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Silindi','#64748b',1500);}
+  catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+function showTab(t){
+  ['dash','poldash','pol','egt','personel','konu'].forEach(x=>{
+    document.getElementById('view-'+x).classList.toggle('hidden',x!==t);
+    document.getElementById('tab-'+x).classList.toggle('active',x===t);
+  });
+  if(t==='poldash')renderPolDash();
+  if(t==='personel')buildPersDatalist();
+  if(t==='konu')konuModChange();
+}
+
+// ===================== PERSONEL KARTI =====================
+function buildPersDatalist(){
+  const lf=document.getElementById('persLokF').value;
+  const src=lf?POL.filter(r=>r.lokasyon===lf):POL;
+  const pers=[...new Set(src.map(r=>r.personel).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  document.getElementById('persDatalist').innerHTML=pers.map(p=>`<option value="${esc(p)}">`).join('');
+}
+function renderPersonelKart(){
+  const ad=document.getElementById('persSec').value.trim();
+  const yf=document.getElementById('persYilF').value;
+  const det=document.getElementById('persDetay');
+  if(!ad){det.innerHTML='<div class="card muted">Yetkinlik ve eğitim geçmişini görmek için bir personel seçin.</div>';document.getElementById('persInfo').textContent='';return;}
+  const pol=POL.filter(r=>r.personel===ad);
+  if(!pol.length){det.innerHTML='<div class="card muted">Bu isimde polivalans kaydı yok.</div>';return;}
+  const guid=pol[0].personel_guid; const info=pol[0];
+  let egt=EGT.filter(r=>(guid&&r.personel_guid===guid)||r.personel===ad);
+  if(yf)egt=egt.filter(r=>r.yil===yf);
+  const egtGer=egt.filter(r=>r.gerceklesme);
+  document.getElementById('persInfo').textContent=`${pol.length} yetkinlik · ${egtGer.length} eğitim`;
+  // yetkinlik seviye dağılımı
+  const yetC=[0,0,0,0]; pol.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
+  const gapList=pol.filter(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));return h&&(+r.yetenek||0)<h;});
+  const adamSaat=egtGer.reduce((s,r)=>s+(+r.sure||0),0);
+  // yetkinlik tablosu
+  const polSorted=[...pol].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.makine_adi).localeCompare(String(b.makine_adi),'tr'));
+  const yetRows=polSorted.map(r=>{
+    const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const h=HEDEF.get(key)||''; const m=+r.yetenek||0; const gap=h?h-m:0;
+    return `<tr><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makinegrup_adi||'')}</td>
+      <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
+      <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td></tr>`;
+  }).join('');
+  // eğitim geçmişi
+  const egtSorted=[...egt].sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
+  const egtRows=egtSorted.slice(0,200).map(r=>`<tr>
+    <td>${esc(r.yil||'')}</td><td><b>${esc(r.konu)}</b></td><td class="muted">${esc(r.turu||'')}</td>
+    <td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td><td>${r.sure!=null?esc(r.sure):''}</td>
+    <td>${r.gerceklesme?'<span class="badge b-ok">✓</span>':'<span class="badge b-no">—</span>'}</td>
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td></tr>`).join('');
+  det.innerHTML=`
+    <div class="stats">
+      <div class="stat"><div class="v">${esc(info.departman||'-')}</div><div class="l">Departman</div></div>
+      <div class="stat"><div class="v">${esc(info.lokasyon||'-')}</div><div class="l">Lokasyon</div></div>
+      <div class="stat"><div class="v">${pol.length}</div><div class="l">Yetkinlik</div></div>
+      <div class="stat blue"><div class="v">${Math.round(adamSaat)}</div><div class="l">Eğitim Adam·Saat</div></div>
+      <div class="stat alt"><div class="v">${gapList.length}</div><div class="l">Eğitim Gereken</div></div>
+    </div>
+    <div class="grid2">
+      <div class="chart-card">
+        <h3>🧩 Yetkinlikler <span class="muted" style="font-weight:400;">(${pol.length}) · Sv1:${yetC[0]} Sv2:${yetC[1]} Sv3:${yetC[2]} Sv4:${yetC[3]}</span></h3>
+        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${yetRows}</tbody></table></div>
+      </div>
+      <div class="chart-card">
+        <h3>📚 Eğitim Geçmişi <span class="muted" style="font-weight:400;">(${egt.length})</span></h3>
+        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Yıl</th><th>Konu</th><th>Tür</th><th>Tarih</th><th>Süre</th><th>Gerç.</th><th>Not</th></tr></thead><tbody>${egtRows||'<tr><td colspan="7" class="muted">Eğitim kaydı yok</td></tr>'}</tbody></table></div>
+      </div>
+    </div>`;
+}
+
+// ===================== KONU / MAKİNE KARTI =====================
+function konuModChange(){
+  const mod=document.getElementById('konuMod').value;
+  const dl=document.getElementById('konuDatalist');
+  document.getElementById('konuSec').value='';
+  document.getElementById('konuSec').placeholder = mod==='egitim'?'Eğitim konusu seç...':'Makine/konu seç...';
+  if(mod==='egitim'){
+    const ks=[...new Set(EGT.map(r=>r.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    dl.innerHTML=ks.map(k=>`<option value="${esc(k)}">`).join('');
+  }else{
+    const ms=[...new Set(POL.map(r=>r.makine_adi).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+    dl.innerHTML=ms.map(m=>`<option value="${esc(m)}">`).join('');
+  }
+  document.getElementById('konuDetay').innerHTML='<div class="card muted">Detayını görmek için yukarıdan seçim yapın.</div>';
+  document.getElementById('konuInfo').textContent='';
+}
+function renderKonuKart(){
+  const mod=document.getElementById('konuMod').value;
+  const sel=document.getElementById('konuSec').value.trim();
+  const det=document.getElementById('konuDetay');
+  if(!sel){det.innerHTML='<div class="card muted">Detayını görmek için seçim yapın.</div>';return;}
+  if(mod==='egitim') renderKonuEgitim(sel,det);
+  else renderKonuMakine(sel,det);
+}
+function renderKonuEgitim(konu,det){
+  const lf=document.getElementById('konuLokF').value, yf=document.getElementById('konuYilF').value;
+  const dur=document.getElementById('konuDurum').value;
+  let kayitlar=EGT.filter(r=>r.konu===konu&&(!lf||r.lokasyon===lf)&&(!yf||r.yil===yf));
+  if(dur==='1') kayitlar=kayitlar.filter(r=>r.gerceklesme);
+  else if(dur==='0') kayitlar=kayitlar.filter(r=>!r.gerceklesme);
+  const ger=kayitlar.filter(r=>r.gerceklesme);
+  const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
+  const notlar=ger.map(r=>r.not_sonra).filter(v=>v!=null&&v!=='');
+  const ortNot=notlar.length?(notlar.reduce((s,v)=>s+(+v||0),0)/notlar.length):0;
+  const adamSaat=ger.reduce((s,r)=>s+(+r.sure||0),0);
+  // o eğitimi almayan personel (lokasyon filtreli polivalans personeli - alanlar)
+  const persMap=new Map(); POL.filter(r=>!lf||r.lokasyon===lf).forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{ad:r.personel,dept:r.departman,lok:r.lokasyon});});
+  const almayan=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([k,v])=>({...v,guid:k}));
+  document.getElementById('konuInfo').textContent=`${ger.length} katılım · ${kisi.size} kişi`;
+  window._almData=almayan; window._almKonu=konu;
+  const alanRows=ger.sort((a,b)=>String(b.kayit_tarih||'').localeCompare(String(a.kayit_tarih||''))).slice(0,300).map(r=>`<tr>
+    <td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.lokasyon||'')}</td><td class="muted">${esc(r.kayit_tarih||r.plan_tarih||'')}</td>
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}</td><td class="muted">${esc(r.egitici||'')}</td></tr>`).join('');
+  const almRows=almayan.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')).slice(0,500).map(v=>`<tr>
+    <td><input type="checkbox" class="almChk" onclick="toggleAlmSel('${esc(v.guid)}',this.checked)" ${_almSel.has(v.guid)?'checked':''}></td>
+    <td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`).join('');
+  det.innerHTML=`
+    <div class="stats">
+      <div class="stat"><div class="v">${kayitlar.length}</div><div class="l">Toplam Kayıt</div></div>
+      <div class="stat"><div class="v">${ger.length}</div><div class="l">Gerçekleşen</div></div>
+      <div class="stat"><div class="v">${kisi.size}</div><div class="l">Katılan Kişi</div></div>
+      <div class="stat blue"><div class="v">${Math.round(adamSaat)}</div><div class="l">Adam·Saat</div></div>
+      <div class="stat amber"><div class="v">${ortNot?ortNot.toFixed(1):'—'}</div><div class="l">Ort. Sınav Notu</div></div>
+    </div>
+    <div class="grid2">
+      <div class="chart-card"><h3>✅ Katılanlar <span class="muted" style="font-weight:400;">(${ger.length})</span></h3>
+        <div class="table-wrap" style="max-height:440px;"><table><thead><tr><th>Personel</th><th>Lokasyon</th><th>Tarih</th><th>Not</th><th>Eğitici</th></tr></thead><tbody>${alanRows||'<tr><td colspan="5" class="muted">—</td></tr>'}</tbody></table></div></div>
+      <div class="chart-card"><h3>🚫 Bu Eğitimi Almayanlar <span class="muted" style="font-weight:400;">(${almayan.length})</span></h3>
+        <div class="filters" style="margin-bottom:8px;">
+          <button class="btn" style="background:#1e7e4a;color:#fff;" onclick="openAlmPlan()">🎓 Seçilenlere Eğitim Planla</button>
+          <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="almSelAll()">Tümünü Seç</button>
+          <button class="btn" style="background:#e2e8f0;color:#334155;" onclick="_almSel.clear();renderKonuKart()">Seçimi Bırak</button>
+          <span class="muted" id="almSelInfo"></span>
+        </div>
+        <div class="table-wrap" style="max-height:400px;"><table><thead><tr><th style="width:30px;"></th><th>Personel</th><th>Departman</th><th>Lokasyon</th></tr></thead><tbody>${almRows||'<tr><td colspan="4" class="muted">Herkes almış 🎉</td></tr>'}</tbody></table></div></div>
+    </div>`;
+  document.getElementById('almSelInfo').textContent=_almSel.size?`${_almSel.size} seçili`:'';
+}
+function renderKonuMakine(makine,det){
+  const lf=document.getElementById('konuLokF').value;
+  const kayitlar=POL.filter(r=>r.makine_adi===makine&&(!lf||r.lokasyon===lf));
+  const yetC=[0,0,0,0]; kayitlar.forEach(r=>{const y=+r.yetenek;if(y>=1&&y<=4)yetC[y-1]++;});
+  document.getElementById('konuInfo').textContent=`${kayitlar.length} yetkin personel`;
+  const rows=[...kayitlar].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.personel).localeCompare(String(b.personel),'tr')).map(r=>{
+    const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const h=HEDEF.get(key)||''; const m=+r.yetenek||0; const gap=h?h-m:0;
+    return `<tr><td><b>${esc(r.personel)}</b></td><td class="muted">${esc(r.departman||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td>
+      <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
+      <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td></tr>`;
+  }).join('');
+  det.innerHTML=`
+    <div class="stats">
+      <div class="stat"><div class="v">${kayitlar.length}</div><div class="l">Yetkin Personel</div></div>
+      <div class="stat" style="--c:#16a34a"><div class="v" style="color:#16a34a">${yetC[3]}</div><div class="l">Sv4 Uzman</div></div>
+      <div class="stat blue"><div class="v">${yetC[2]}</div><div class="l">Sv3 Yetkin</div></div>
+      <div class="stat amber"><div class="v">${yetC[1]}</div><div class="l">Sv2 Gelişmekte</div></div>
+      <div class="stat alt"><div class="v">${yetC[0]}</div><div class="l">Sv1 Başlangıç</div></div>
+    </div>
+    <div class="chart-card"><h3>👥 ${esc(makine)} — Yetkin Personeller</h3>
+      <div class="table-wrap" style="max-height:520px;"><table><thead><tr><th>Personel</th><th>Departman</th><th>Lokasyon</th><th>Mevcut</th><th>Hedef</th><th>Durum</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+
+// ===================== DASHBOARD =====================
+function num(v){const n=+v;return isNaN(n)?0:n;}
+function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+function renderDash(){
+  const yil=document.getElementById('dashYil').value;
+  const lok=document.getElementById('dashLok').value;
+  let e=EGT.filter(r=>(!yil||r.yil===yil)&&(!lok||r.lokasyon===lok));
+  const ger=e.filter(r=>r.gerceklesme);
+
+  // --- Temel metrikler ---
+  const adamSaat=ger.reduce((s,r)=>s+num(r.sure),0);
+  const planSaat=e.reduce((s,r)=>s+num(r.sure),0);            // tüm planlanan (gerçekleşsin/leşmesin)
+  const oran=e.length?(ger.length/e.length*100):0;
+  const kisi=new Set(ger.map(r=>r.personel_guid||r.personel).filter(Boolean));
+  const kisiSaat=kisi.size?(adamSaat/kisi.size):0;
+  // Sınav gelişimi: sınav öncesi/sonrası ikisi de dolu kayıtlarda fark
+  const ciftNot=ger.filter(r=>r.not_once!=null&&r.not_once!==''&&r.not_sonra!=null&&r.not_sonra!=='');
+  const ortOnce=ciftNot.length?ciftNot.reduce((s,r)=>s+num(r.not_once),0)/ciftNot.length:0;
+  const ortSonra=ciftNot.length?ciftNot.reduce((s,r)=>s+num(r.not_sonra),0)/ciftNot.length:0;
+  const gelisim=ortSonra-ortOnce;
+
+  // --- Eğitim almayanlar: polivalans personeli (lokasyon filtreli) − eğitim alanlar ---
+  let polP=POL.filter(r=>(!lok||r.lokasyon===lok));
+  const persMap=new Map(); polP.forEach(r=>{const k=r.personel_guid||r.personel;if(k&&!persMap.has(k))persMap.set(k,{guid:k,ad:r.personel,lok:r.lokasyon,dept:r.departman});});
+  const almayanlar=[...persMap.entries()].filter(([k])=>!kisi.has(k)).map(([,v])=>v);
+
+  document.getElementById('dAdamSaat').textContent=Math.round(adamSaat).toLocaleString('tr');
+  document.getElementById('dPlanSaat').textContent=Math.round(planSaat).toLocaleString('tr');
+  document.getElementById('dOran').textContent='%'+oran.toFixed(0);
+  document.getElementById('dKisiSaat').textContent=kisiSaat.toFixed(1);
+  // --- KPI hedef karşılaştırma ---
+  const hKisiSaat=parseFloat(AYAR.kpi_kisi_yil_saat)||0, hOran=parseFloat(AYAR.kpi_oran)||0;
+  document.getElementById('dKisiSaatL').textContent=hKisiSaat?`Kişi Başı Saat (hedef ${hKisiSaat})`:'Kişi Başı Saat';
+  document.getElementById('dKisiSaat').style.color=hKisiSaat?(kisiSaat>=hKisiSaat?'#16a34a':'#e11d48'):'#1e7e4a';
+  document.getElementById('dOran').style.color=hOran?(oran>=hOran?'#16a34a':'#e11d48'):'#d97706';
+  const dKpiEl=document.getElementById('dKpi'), dKpiLEl=document.getElementById('dKpiL');
+  if(!hKisiSaat&&!hOran){dKpiEl.textContent='—';dKpiLEl.textContent='KPI hedefi tanımsız';dKpiEl.style.color='#94a3b8';}
+  else{
+    let tut=0,top=0;
+    if(hKisiSaat){top++;if(kisiSaat>=hKisiSaat)tut++;}
+    if(hOran){top++;if(oran>=hOran)tut++;}
+    dKpiEl.textContent=tut+'/'+top;
+    dKpiLEl.textContent=`KPI Tutturma${hOran?` · Oran %${oran.toFixed(0)}/${hOran}`:''}`;
+    dKpiEl.style.color=tut===top?'#16a34a':tut>0?'#d97706':'#e11d48';
+  }
+  document.getElementById('dKisi').textContent=kisi.size.toLocaleString('tr');
+  document.getElementById('dAlmayan').textContent=almayanlar.length.toLocaleString('tr');
+  document.getElementById('dGelisim').textContent=ciftNot.length?((gelisim>=0?'+':'')+gelisim.toFixed(1)):'—';
+  document.getElementById('dashInfo').textContent=`${persMap.size} personel · ${e.length} eğitim kaydı (${ger.length} gerçekleşen)`;
+
+  // --- Aylık: planlanan (plan_tarih) vs gerçekleşen (kayit_tarih) ---
+  const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
+  e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
+  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
+  const hAy=parseFloat(AYAR.kpi_ay_saat)||0;
+  const aylikDs=[
+    {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
+    {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}];
+  if(hAy)aylikDs.push({label:`Hedef (${hAy})`,data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
+  drawGrouped('chAylik',AYLAR,aylikDs);
+
+  // --- Gerçekleşme donut ---
+  drawDoughnut('chDurum',['Gerçekleşen','Gerçekleşmeyen'],[ger.length,e.length-ger.length],['#16a34a','#e11d48']);
+
+  // --- Departman bazlı adam-saat (lokasyon içi kırılım) ---
+  const deptMap={}; ger.forEach(r=>{const p=POL.find(x=>(x.personel_guid||x.personel)===(r.personel_guid||r.personel)); const D=(p&&p.departman)||'(Belirsiz)'; deptMap[D]=(deptMap[D]||0)+num(r.sure);});
+  const deptE=topN(deptMap,12);
+  drawBar('chDept','Adam·Saat',deptE.map(x=>x[0]),deptE.map(x=>Math.round(x[1])),'#0891b2',true);
+
+  // --- En çok eğitilen konular (adam-saat) ---
+  const konuMap={}; ger.forEach(r=>{const K=r.konu||'(Belirsiz)';konuMap[K]=(konuMap[K]||0)+num(r.sure);});
+  const konuE=topN(konuMap,10);
+  drawBar('chKonu','Adam·Saat',konuE.map(x=>x[0].length>32?x[0].slice(0,32)+'…':x[0]),konuE.map(x=>Math.round(x[1])),'#9333ea',true);
+
+  // --- Eğitim türü donut ---
+  const turMap={}; e.forEach(r=>{const T=r.turu||'(Belirsiz)';turMap[T]=(turMap[T]||0)+1;});
+  const turE=topN(turMap,8);
+  drawDoughnut('chTur',turE.map(x=>x[0]),turE.map(x=>x[1]),PALETTE);
+
+  // --- Eğitici bazlı adam-saat ---
+  const egMap={}; ger.forEach(r=>{const G=r.egitici||'(Belirsiz)';egMap[G]=(egMap[G]||0)+num(r.sure);});
+  const egE=topN(egMap,10);
+  drawBar('chEgitici','Adam·Saat',egE.map(x=>x[0].length>28?x[0].slice(0,28)+'…':x[0]),egE.map(x=>Math.round(x[1])),'#d97706',true);
+
+  // --- Yıllara göre trend (lokasyon filtreli, yıl filtresi YOK) ---
+  let eY=EGT.filter(r=>(!lok||r.lokasyon===lok)&&r.gerceklesme);
+  const yilMap={}; eY.forEach(r=>{if(r.yil)yilMap[r.yil]=(yilMap[r.yil]||0)+num(r.sure);});
+  const yilE=Object.entries(yilMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  drawBar('chYil','Adam·Saat',yilE.map(x=>x[0]),yilE.map(x=>Math.round(x[1])),'#2563eb');
+
+  // --- Sınav öncesi → sonrası ---
+  drawGrouped('chSinav',['Ortalama Not'],[
+    {label:'Sınav Öncesi',data:[+ortOnce.toFixed(1)],color:'#f59e0b'},
+    {label:'Sınav Sonrası',data:[+ortSonra.toFixed(1)],color:'#16a34a'}],true);
+
+  // --- Etkinlik değerlendirme sonuçları (filtreli eğitimlerin DEGER kayıtları) ---
+  const uidSet=new Set(e.map(r=>r.uid));
+  const dgr=[...DEGER.values()].filter(d=>uidSet.has(d.uid));
+  const say=(f,v)=>dgr.filter(d=>d[f]===v).length;
+  drawGrouped('chEtkinlik',['İşinde Uygulandı','Hedeflere Ulaşıldı','Performans İyileşti'],[
+    {label:'Evet',data:[say('etk_uygulama','Evet'),say('etk_hedef','Evet'),say('etk_performans','Evet')],color:'#16a34a'},
+    {label:'Kısmen',data:[say('etk_uygulama','Kısmen'),say('etk_hedef','Kısmen'),say('etk_performans','Kısmen')],color:'#f59e0b'},
+    {label:'Hayır',data:[say('etk_uygulama','Hayır'),say('etk_hedef','Hayır'),say('etk_performans','Hayır')],color:'#e11d48'}]);
+  document.getElementById('degerInfo2').textContent=dgr.length?`(${dgr.length} değerlendirme)`:'(henüz değerlendirme yok)';
+
+  // --- Etkinlik sonucu dağılımı + tekrar eğitim bekleyen ---
+  const sonucC={'Etkili':0,'Kısmen Etkili':0,'Etkili Değil':0};
+  dgr.forEach(d=>{if(d.etkinlik_sonuc&&sonucC[d.etkinlik_sonuc]!=null)sonucC[d.etkinlik_sonuc]++;});
+  const tekrar=dgr.filter(d=>d.etkinlik_sonuc==='Etkili Değil'&&d.tekrar_egitim_tarihi).length;
+  drawDoughnut('chPuan',['Etkili','Kısmen Etkili','Etkili Değil'],
+    [sonucC['Etkili'],sonucC['Kısmen Etkili'],sonucC['Etkili Değil']],['#16a34a','#f59e0b','#e11d48']);
+  document.getElementById('tekrarInfo').textContent=tekrar?`· ⚠ ${tekrar} tekrar eğitim planlı`:'';
+
+  // --- Kişi başı yıllık eğitim saati (lokasyon filtreli, yıl filtresi YOK) ---
+  const kyMap={};
+  EGT.filter(r=>(!lok||r.lokasyon===lok)&&r.gerceklesme).forEach(r=>{
+    if(!r.yil)return; (kyMap[r.yil]=kyMap[r.yil]||{s:0,k:new Set()});
+    kyMap[r.yil].s+=num(r.sure); kyMap[r.yil].k.add(r.personel_guid||r.personel);
+  });
+  const kyE=Object.entries(kyMap).sort((a,b)=>a[0].localeCompare(b[0]));
+  const hKS=parseFloat(AYAR.kpi_kisi_yil_saat)||0;
+  const kisiDs=[{label:'Saat/Kişi',data:kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),color:'#0891b2'}];
+  if(hKS)kisiDs.push({label:`Hedef (${hKS})`,data:kyE.map(()=>hKS),type:'line',color:'#e11d48'});
+  drawGrouped('chKisiYil',kyE.map(x=>x[0]),kisiDs);
+
+  // --- Almayanlar listesi ---
+  almayanlar.sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'));
+  window._almayan=almayanlar; window._almDash=almayanlar;
+  // Lokasyon filtresi doldur
+  const almLoks=[...new Set(almayanlar.map(v=>v.lok).filter(Boolean))].sort();
+  const almLokF=document.getElementById('almDashLokF');
+  const almLokPrev=almLokF.value;
+  almLokF.innerHTML='<option value="">Tüm Lokasyonlar</option>'+almLoks.map(l=>`<option value="${esc(l)}">${esc(l)}</option>`).join('');
+  if(almLoks.includes(almLokPrev)) almLokF.value=almLokPrev;
+  renderAlmayanDash();
+}
+
+function destroyChart(id){if(charts[id]){charts[id].destroy();delete charts[id];}}
+function drawBar(id,label,labels,data,color,horizontal){
+  destroyChart(id);
+  charts[id]=new Chart(document.getElementById(id),{type:'bar',
+    data:{labels,datasets:[{label,data,backgroundColor:color,borderRadius:5}]},
+    options:{indexAxis:horizontal?'y':'x',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}}});
+}
+function drawDoughnut(id,labels,data,colors){
+  destroyChart(id);
+  charts[id]=new Chart(document.getElementById(id),{type:'doughnut',
+    data:{labels,datasets:[{data,backgroundColor:colors}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:14}}}}});
+}
+function drawGrouped(id,labels,datasets,horizontal){
+  destroyChart(id);
+  charts[id]=new Chart(document.getElementById(id),{type:'bar',
+    data:{labels,datasets:datasets.map(d=>d.type==='line'
+      ? {label:d.label,data:d.data,type:'line',borderColor:d.color,borderDash:[7,5],pointRadius:0,fill:false,borderWidth:2,order:0}
+      : {label:d.label,data:d.data,backgroundColor:d.color,borderRadius:5,order:1})},
+    options:{indexAxis:horizontal?'y':'x',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{size:11},boxWidth:14}}},
+      scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}},beginAtZero:true}}}});
+}
+
+// ===================== POLIVALANS =====================
+function hedefKey(r){return (r.personel_guid||'')+'|'+(r.makine_kodu||'');}
+function egitimOneri(mevcut,hedef){
+  const gap=hedef-mevcut; if(gap<=0)return '';
+  let o=`${SEVIYE[mevcut]} → ${SEVIYE[hedef]}: `;
+  if(hedef===4) o+='İleri uygulamalı eğitim + eğitici/mentor programı, ardından yetkinlik değerlendirme sınavı.';
+  else if(gap>=2) o+='Yoğun işbaşı eğitimi + mentorluk, ara değerlendirme ile kademeli geçiş.';
+  else o+='İşbaşı eğitimi + uygulamalı pratik, sonrasında yetkinlik değerlendirmesi.';
+  return o;
+}
+function polFiltered(){
+  const q=document.getElementById('polSearch').value.toLowerCase().trim();
+  const dept=document.getElementById('polDept').value;
+  const lok=document.getElementById('polLok').value;
+  const yet=document.getElementById('polYet').value;
+  const durum=document.getElementById('polDurum').value;
+  return POL.filter(r=>{
+    if(dept&&r.departman!==dept)return false;
+    if(lok&&r.lokasyon!==lok)return false;
+    if(yet&&String(r.yetenek)!==yet)return false;
+    if(durum){
+      const key=hedefKey(r); const h=HEDEF.get(key); const mevcut=+r.yetenek||0; const pd=PDEGER.get(key);
+      if(durum==='nohedef'&&h)return false;
+      if(durum==='gap'&&!(h&&mevcut<h))return false;
+      if(durum==='ok'&&!(h&&mevcut>=h))return false;
+      if(durum==='planli'&&!(pd&&pd.plan_egitim_tarihi))return false;
+      if(durum==='degerli'&&!(pd&&pd.deger_tarihi))return false;
+    }
+    if(q){const s=(r.personel+' '+r.makine_adi+' '+r.makine_kodu+' '+r.makinegrup_adi+' '+r.proses).toLowerCase();if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function sortPol(k){polSort.dir=polSort.k===k?-polSort.dir:1;polSort.k=k;renderPol();}
+function renderPol(){
+  let rows=polFiltered();const k=polSort.k,d=polSort.dir;
+  rows.sort((a,b)=>{let x=a[k]??'',y=b[k]??'';if(k==='yetenek'){x=+x||0;y=+y||0;return (x-y)*d;}return String(x).localeCompare(String(y),'tr')*d;});
+  document.getElementById('polTotal').textContent=rows.length;
+  document.getElementById('polPers').textContent=new Set(rows.map(r=>r.personel)).size;
+  document.getElementById('polMak').textContent=new Set(rows.map(r=>r.makine_kodu)).size;
+  let hedefli=0,gapli=0;
+  rows.forEach(r=>{const h=HEDEF.get(hedefKey(r));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  document.getElementById('polHedefli').textContent=hedefli.toLocaleString('tr');
+  document.getElementById('polGap').textContent=gapli.toLocaleString('tr');
+  const cap=rows.slice(0,2000);
+  window._polShownKeys=cap.map(hedefKey);
+  document.getElementById('polBody').innerHTML=cap.map(r=>{
+    const key=hedefKey(r); const mevcut=+r.yetenek||0; const h=HEDEF.get(key)||'';
+    const gap=h?h-mevcut:0;
+    const durum = !h ? '<span class="muted">—</span>'
+      : gap<=0 ? '<span class="badge b-ok">✓ Yeterli</span>'
+      : `<span class="badge b-no">⚠ ${gap} seviye eksik</span>`;
+    const pl=PLAN.get(key);
+    const plRozet = pl ? `<br><span class="badge" style="background:#dbeafe;color:#1e40af;cursor:pointer;">🎓 ${esc(pl.plan_tarih||'planlı')}</span>` : '';
+    const oneri = gap>0
+      ? `<span style="font-size:.9em;color:#b45309;cursor:pointer;" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Eğitim planla">${esc(egitimOneri(mevcut,h))} <b>＋Planla</b></span>${plRozet}`
+      : (pl? `<span class="muted" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" style="cursor:pointer;">Eğitim planlandı</span>${plRozet}` : (h?'<span class="muted">—</span>':''));
+    const sel=`<select onchange="saveHedef('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.value)" style="padding:3px 5px;border-radius:6px;border:1px solid #cbd5e1;font-weight:600;">
+      <option value="">—</option>${[1,2,3,4].map(n=>`<option value="${n}" ${h==n?'selected':''}>${n}</option>`).join('')}</select>`;
+    const pd=PDEGER.get(key);
+    const planEk = pd&&pd.plan_egitim_tarihi ? `<br><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 ${esc(pd.plan_egitim_tarihi)}</span>` : '';
+    const sonDeger= pd&&pd.deger_tarihi
+      ? `<span class="badge b-ok" style="cursor:pointer;" title="Değerlendirmeyi aç">📋 ${esc(pd.deger_tarihi)}${pd.hesaplanan_seviye?' · sv.'+pd.hesaplanan_seviye:''}</span>${planEk}`
+      : `<button class="btn-dgr" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Değerlendir</button>${planEk}`;
+    const mkCell=`<td style="cursor:pointer;color:#1e7e4a;font-weight:600;" onclick="openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Polivalans değerlendirmesi yap">${esc(r.makine_adi)}</td>`;
+    const chk=_polSel.has(key)?'checked':'';
+    const manRoz=r.kaynak==='manuel'?` <span class="badge" style="background:#ede9fe;color:#5b21b6;cursor:pointer;" onclick="silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')" title="Manuel kayıt — sil">✏️🗑</span>`:'';
+    return `<tr${r.kaynak==='manuel'?' style="background:#faf5ff;"':''}>
+      <td><input type="checkbox" class="polChk" onclick="togglePolSel('${r.personel_guid||''}','${escAttr(r.makine_kodu)}',this.checked)" ${chk}></td>
+      <td><b>${esc(r.personel)}</b>${manRoz}</td><td class="muted">${esc(r.lokasyon||'')}</td><td>${esc(r.departman)}</td>
+      <td class="muted">${esc(r.makinegrup_adi)}</td>${mkCell}<td class="muted">${esc(r.makine_kodu)}</td>
+      <td><span class="yet yet${mevcut}">${esc(mevcut)}</span></td>
+      <td>${sel}</td><td>${durum}</td><td>${oneri}</td>
+      <td onclick="${pd?`openPolDeger('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')`:''}" style="${pd?'cursor:pointer;':''}">${sonDeger}</td></tr>`;
+  }).join('')
+    +(rows.length>2000?`<tr><td colspan="12" class="muted">… ${rows.length-2000} kayıt daha (filtre daraltın)</td></tr>`:'');
+  polBulkUpdate();
+}
+function escAttr(s){return (s==null?'':String(s)).replace(/'/g,"\\'").replace(/"/g,'&quot;');}
+async function saveHedef(guid,mk,val){
+  const key=guid+'|'+mk; const h=val?+val:null;
+  if(h)HEDEF.set(key,h); else HEDEF.delete(key);
+  renderPol();
+  try{
+    if(h){
+      await fetch(`${SUPA}/rest/v1/egt_hedef?on_conflict=id`,{method:'POST',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+        body:JSON.stringify([{id:key,personel_guid:guid,makine_kodu:mk,hedef:h}])});
+    }else{
+      await fetch(`${SUPA}/rest/v1/egt_hedef?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast('🎯 Hedef kaydedildi','#16a34a',1500);
+  }catch(e){toast('❌ Hedef kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+
+// ===================== Eğitim Değerlendirme Modalı =====================
+function openDeger(uid){
+  _modalUid=uid;
+  const r=EGT_BY_UID.get(uid)||{};
+  const d=DEGER.get(uid)||{};
+  document.getElementById('degerInfo').innerHTML=
+    `<b>${esc(r.konu||'')}</b><br>👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 📅 ${esc(r.kayit_tarih||r.plan_tarih||'')} &nbsp;·&nbsp; ⏱ ${r.sure||'?'} saat<br>📍 ${esc(r.lokasyon||'')} &nbsp;·&nbsp; 👨‍🏫 ${esc(r.egitici||'')}`;
+  const yeni=!DEGER.has(uid);  // yeni kayıtta olumlu varsayılan
+  document.getElementById('dUygulama').value=d.etk_uygulama||(yeni?'Evet':'');
+  document.getElementById('dHedef').value=d.etk_hedef||(yeni?'Evet':'');
+  document.getElementById('dPerformans').value=d.etk_performans||(yeni?'Evet':'');
+  document.getElementById('dAciklama').value=d.etk_aciklama||'';
+  document.getElementById('dSonuc').value=d.etkinlik_sonuc||(yeni?'Etkili':'');
+  document.getElementById('dTekrarTarih').value=d.tekrar_egitim_tarihi||'';
+  document.getElementById('dTekrarKonu').value=d.tekrar_konu||(r.konu||'');
+  document.getElementById('dTekrarTur').value=d.tekrar_tur||'İşbaşı Eğitim';
+  document.getElementById('dDegerTarih').value=d.deger_tarihi||(DEGER.has(uid)?'':bugun());
+  document.getElementById('dDegerlendiren').value=d.degerlendiren||'';
+  document.getElementById('dSilBtn').style.display=DEGER.has(uid)?'inline-flex':'none';
+  degerSonucToggle();
+  document.getElementById('degerModal').classList.add('show');
+}
+// 3 sorudan otomatik etkinlik sonucu önerisi (kullanıcı henüz seçmediyse)
+function sonucOnerisi(){
+  const vals=[document.getElementById('dUygulama').value,document.getElementById('dHedef').value,document.getElementById('dPerformans').value];
+  if(vals.some(v=>!v))return;
+  const hayir=vals.filter(v=>v==='Hayır').length, evet=vals.filter(v=>v==='Evet').length;
+  let s; if(evet===3)s='Etkili'; else if(hayir>=2)s='Etkili Değil'; else s='Kısmen Etkili';
+  const sel=document.getElementById('dSonuc');
+  if(!sel.value){ sel.value=s; degerSonucToggle(); }
+}
+function degerSonucToggle(){
+  const s=document.getElementById('dSonuc').value;
+  document.getElementById('tekrarBox').style.display=(s==='Etkili Değil'||s==='Kısmen Etkili')?'block':'none';
+}
+function closeDeger(){document.getElementById('degerModal').classList.remove('show');_modalUid=null;}
+async function kaydetDeger(){
+  if(!_modalUid)return;
+  const sonuc=document.getElementById('dSonuc').value||null;
+  const rec={
+    uid:_modalUid,
+    etk_uygulama:document.getElementById('dUygulama').value||null,
+    etk_hedef:document.getElementById('dHedef').value||null,
+    etk_performans:document.getElementById('dPerformans').value||null,
+    etk_aciklama:document.getElementById('dAciklama').value.trim()||null,
+    etkinlik_sonuc:sonuc,
+    tekrar_egitim_tarihi:(_planli(sonuc)?(document.getElementById('dTekrarTarih').value||null):null),
+    tekrar_konu:(_planli(sonuc)?(document.getElementById('dTekrarKonu').value.trim()||null):null),
+    tekrar_tur:(_planli(sonuc)?(document.getElementById('dTekrarTur').value||null):null),
+    deger_tarihi:document.getElementById('dDegerTarih').value||null,
+    degerlendiren:document.getElementById('dDegerlendiren').value.trim()||null
+  };
+  DEGER.set(_modalUid,rec);
+  closeDeger(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?on_conflict=uid`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('📋 Değerlendirme kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+async function silDeger(){
+  if(!_modalUid)return; const uid=_modalUid;
+  DEGER.delete(uid); closeDeger(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    toast('🗑 Değerlendirme silindi','#64748b',1500);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== Polivalans Değerlendirme (checklist) =====================
+const SEV_RENK={1:'#ef4444',2:'#f59e0b',3:'#3b82f6',4:'#16a34a'};
+function bugun(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function openPolDeger(guid,mk){
+  const key=guid+'|'+mk; _polModalKey=key;
+  const r=POL_BY_KEY.get(key)||{}; const mevcut=+r.yetenek||0;
+  const pd=PDEGER.get(key);
+  // checklist: kayıt varsa onu kullan, yoksa mevcut yeteneğe göre otomatik (≤mevcut tüm kriterler işaretli)
+  let chk = pd&&pd.checklist ? pd.checklist : {};
+  if(!pd||!pd.checklist){ chk={}; for(let s=1;s<=4;s++) chk[s]=PKRITER[s].map(()=> s<=mevcut); }
+  document.getElementById('polDegerInfo').innerHTML=
+    `<b>${esc(r.makine_adi||'')}</b> <span class="muted">(${esc(r.makine_kodu||'')})</span><br>
+     👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 🏢 ${esc(r.departman||'')} &nbsp;·&nbsp; 📍 ${esc(r.lokasyon||'')}<br>
+     Mevcut Yetkinlik: <span class="yet yet${mevcut}" style="width:20px;height:20px;line-height:20px;">${mevcut}</span>`;
+  let html='';
+  for(let s=1;s<=4;s++){
+    html+=`<div class="chk-sev"><div class="chk-sev-head" style="background:${SEV_RENK[s]};">Seviye ${s} — ${SEVIYE[s]}</div><div class="chk-sev-body">`;
+    PKRITER[s].forEach((kr,i)=>{
+      const ck=chk[s]&&chk[s][i]?'checked':'';
+      html+=`<label class="chk-item"><input type="checkbox" data-sev="${s}" data-idx="${i}" ${ck} onchange="polHesapla()"><span>${esc(kr)}</span></label>`;
+    });
+    html+='</div></div>';
+  }
+  document.getElementById('polChecklist').innerHTML=html;
+  document.getElementById('pTarih').value=(pd&&pd.deger_tarihi)||bugun();
+  document.getElementById('pDegerlendiren').value=(pd&&pd.degerlendiren)||'';
+  document.getElementById('pSilBtn').style.display=pd?'inline-flex':'none';
+  polHesapla();
+  document.getElementById('polModal').classList.add('show');
+}
+function polCollect(){
+  const chk={1:[],2:[],3:[],4:[]};
+  document.querySelectorAll('#polChecklist input[type=checkbox]').forEach(c=>{
+    chk[+c.dataset.sev][+c.dataset.idx]=c.checked;
+  });
+  return chk;
+}
+function polHesapla(){
+  const chk=polCollect();
+  // tamamlanan en üst ardışık seviye (her seviyenin TÜM kriterleri işaretli)
+  let hesap=0;
+  for(let s=1;s<=4;s++){ if(chk[s].length===PKRITER[s].length && chk[s].every(Boolean)) hesap=s; else break; }
+  document.getElementById('pHesap').textContent=hesap||'—';
+  const r=POL_BY_KEY.get(_polModalKey)||{}; const mevcut=+r.yetenek||0;
+  let not='';
+  if(hesap>mevcut) not=` (LeanSys: ${mevcut} → değerlendirme ${hesap}, terfi adayı)`;
+  else if(hesap<mevcut) not=` (LeanSys: ${mevcut}, checklist eksik)`;
+  document.getElementById('pHesapNot').textContent=not;
+  return hesap;
+}
+function closePolDeger(){document.getElementById('polModal').classList.remove('show');_polModalKey=null;}
+async function kaydetPolDeger(){
+  if(!_polModalKey)return;
+  const [guid,mk]=_polModalKey.split('|');
+  const rec={id:_polModalKey,personel_guid:guid,makine_kodu:mk,
+    checklist:polCollect(),hesaplanan_seviye:polHesapla(),
+    deger_tarihi:document.getElementById('pTarih').value||null,
+    degerlendiren:document.getElementById('pDegerlendiren').value.trim()||null};
+  PDEGER.set(_polModalKey,rec); closePolDeger(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?on_conflict=id`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('🧩 Polivalans değerlendirmesi kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+async function silPolDeger(){
+  if(!_polModalKey)return; const key=_polModalKey;
+  PDEGER.delete(key); closePolDeger(); renderPol();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    toast('🗑 Değerlendirme silindi','#64748b',1500);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== Eğitim Planla (gap kapatma) =====================
+function openEgitimPlan(guid,mk){
+  const key=guid+'|'+mk; _planKey=key; _planBulk=false;
+  const r=POL_BY_KEY.get(key)||{}; const mevcut=+r.yetenek||0; const hedef=HEDEF.get(key)||0;
+  const pl=PLAN.get(key);
+  document.getElementById('planInfo').innerHTML=
+    `<b>${esc(r.makine_adi||'')}</b> <span class="muted">(${esc(r.makine_kodu||'')})</span><br>
+     👤 ${esc(r.personel||'')} &nbsp;·&nbsp; 🏢 ${esc(r.departman||'')} &nbsp;·&nbsp; 📍 ${esc(r.lokasyon||'')}<br>
+     Mevcut: <b>${mevcut}</b> ${hedef?`→ Hedef: <b>${hedef}</b> (${hedef-mevcut} seviye eksik)`:''}`;
+  document.getElementById('plKonu').value=(pl&&pl.konu)||`${r.makine_adi||''} — ${hedef?'Seviye '+hedef+' ':''}yetkinlik eğitimi`;
+  document.getElementById('plTarih').value=(pl&&pl.plan_tarih)||'';
+  document.getElementById('plTur').value=(pl&&pl.tur)||'İşbaşı Eğitim';
+  document.getElementById('plEgitici').value=(pl&&pl.egitici)||'';
+  document.getElementById('plSure').value=(pl&&pl.sure)||'';
+  document.getElementById('plAciklama').value=(pl&&pl.aciklama)||'';
+  document.getElementById('plOlusturan').value=(pl&&pl.olusturan)||'';
+  document.getElementById('plSilBtn').style.display=pl?'inline-flex':'none';
+  document.getElementById('planModal').classList.add('show');
+}
+function closePlan(){document.getElementById('planModal').classList.remove('show');_planKey=null;_planBulk=false;_planAlmayan=false;_planHedefAuto=false;}
+async function kaydetPlan(){
+  const tarih=document.getElementById('plTarih').value;
+  if(!tarih){toast('⚠ Planlanan tarih gerekli','#d97706',2500);return;}
+  const ortak={plan_tarih:tarih,tur:document.getElementById('plTur').value||null,
+    egitici:document.getElementById('plEgitici').value.trim()||null,
+    sure:document.getElementById('plSure').value?+document.getElementById('plSure').value:null,
+    aciklama:document.getElementById('plAciklama').value.trim()||null,durum:'Planlandı',
+    olusturan:document.getElementById('plOlusturan').value.trim()||null};
+  const konuInput=document.getElementById('plKonu').value.trim();
+  if(_planHedefAuto){
+    const aday=window._hedefAday||[];
+    const rows=aday.map(r=>{
+      const key=hedefKey(r); const h=HEDEF.get(key)||0; const [guid,mk]=key.split('|');
+      return {id:key,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+        lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:h,
+        konu:konuInput||`${r.makine_adi||''} — Seviye ${h} yetkinlik eğitimi`,...ortak};
+    });
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); closePlan(); renderPol(); renderEgt(); renderDash(); updateChgCount();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} hedef gelişim eğitimi planlandı`,'#16a34a',2500);}
+    catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+    return;
+  }
+  if(_planAlmayan){
+    const persler=(window._almData||[]).filter(p=>_almSel.has(p.guid));
+    const konu=konuInput||window._almKonu||'';
+    const rows=persler.map(p=>({id:'alm_'+slug(p.guid)+'_'+slug(konu).slice(0,40),
+      personel_guid:p.guid,personel:p.ad,makine_kodu:null,makine_adi:null,lokasyon:p.lok||null,departman:p.dept||null,
+      hedef_seviye:null,konu:konu,...ortak}));
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); _almSel.clear(); closePlan(); renderEgt(); renderDash(); renderKonuKart();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} personele eğitim planlandı`,'#16a34a',2200);}
+    catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+    return;
+  }
+  if(_planBulk){
+    const keys=[..._polSel]; const rows=keys.map(key=>{
+      const r=POL_BY_KEY.get(key)||{}; const [guid,mk]=key.split('|');
+      return {id:key,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+        lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:HEDEF.get(key)||null,
+        konu:konuInput||`${r.makine_adi||''} yetkinlik eğitimi`,...ortak};
+    });
+    rows.forEach(rec=>PLAN.set(rec.id,rec)); closePlan(); renderPol(); renderEgt(); renderDash();
+    try{await _batchUpsert('egt_plan',rows,'id');toast(`🎓 ${rows.length} kayıt eğitim planına eklendi`,'#16a34a',2200);}
+    catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+    return;
+  }
+  if(!_planKey)return; const [guid,mk]=_planKey.split('|');
+  const r=POL_BY_KEY.get(_planKey)||{};
+  const rec={id:_planKey,personel_guid:guid,personel:r.personel||null,makine_kodu:mk,makine_adi:r.makine_adi||null,
+    lokasyon:r.lokasyon||null,departman:r.departman||null,hedef_seviye:HEDEF.get(_planKey)||null,
+    konu:konuInput||null,...ortak};
+  PLAN.set(_planKey,rec); closePlan(); renderPol(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_plan?on_conflict=id`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify([rec])});
+    toast('🎓 Eğitim planına eklendi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi (tablo oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+async function silPlan(){
+  if(!_planKey)return; const key=_planKey;
+  PLAN.delete(key); closePlan(); renderPol(); renderEgt(); renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_plan?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    toast('🗑 Plan silindi','#64748b',1500);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== TOPLU İŞLEM (Polivalans) =====================
+function togglePolSel(guid,mk,on){const key=guid+'|'+mk;if(on)_polSel.add(key);else _polSel.delete(key);polBulkUpdate();}
+function togglePolSelAll(on){(window._polShownKeys||[]).forEach(k=>{if(on)_polSel.add(k);else _polSel.delete(k);});renderPol();}
+function polSelTemizle(){_polSel.clear();document.getElementById('polChkAll').checked=false;renderPol();}
+function polBulkUpdate(){
+  const bar=document.getElementById('polBulkBar');
+  bar.style.display=_polSel.size?'flex':'none';
+  document.getElementById('polSelCount').textContent=_polSel.size+' seçili';
+}
+async function _batchUpsert(table,rows,conflict){
+  for(let i=0;i<rows.length;i+=200){
+    await fetch(`${SUPA}/rest/v1/${table}?on_conflict=${conflict}`,{method:'POST',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+      body:JSON.stringify(rows.slice(i,i+200))});
+  }
+}
+async function topluHedef(sev){
+  if(!_polSel.size)return;
+  const keys=[..._polSel]; const rows=[];
+  keys.forEach(key=>{HEDEF.set(key,sev);const [guid,mk]=key.split('|');rows.push({id:key,personel_guid:guid,makine_kodu:mk,hedef:sev});});
+  renderPol();
+  try{await _batchUpsert('egt_hedef',rows,'id');toast(`🎯 ${keys.length} kayda Hedef ${sev} atandı`,'#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+async function topluHedefSil(){
+  if(!_polSel.size)return;
+  const keys=[..._polSel]; keys.forEach(k=>HEDEF.delete(k)); renderPol();
+  try{
+    for(let i=0;i<keys.length;i+=100){
+      const inList=keys.slice(i,i+100).map(k=>`"${k}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_hedef?id=in.(${encodeURIComponent(inList)})`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast(`${keys.length} kaydın hedefi temizlendi`,'#64748b',2000);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+function topluEgitimAc(){
+  if(!_polSel.size)return;
+  _planBulk=true; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Toplu Eğitim Planı</b><br><span class="muted">${_polSel.size} personel-yetkinlik kaydı seçili — hepsine aynı eğitim planlanacak.</span>`;
+  document.getElementById('plKonu').value='';
+  document.getElementById('plTarih').value='';
+  document.getElementById('plTur').value='İşbaşı Eğitim';
+  document.getElementById('plEgitici').value='';
+  document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';
+  document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
+}
+
+// ===================== Hedef Gap'lerine Toplu Eğitim Planlama =====================
+function topluHedefEgitimAc(){
+  let aday;
+  if(_polSel.size){
+    aday=POL.filter(r=>{const k=hedefKey(r);const h=HEDEF.get(k);return _polSel.has(k)&&h&&(+r.yetenek||0)<h;});
+  }else{
+    aday=POL.filter(r=>{const h=HEDEF.get(hedefKey(r));return h&&(+r.yetenek||0)<h;});
+  }
+  if(!aday.length){toast('Hedefi yükseltilecek (mevcut<hedef) kayıt yok. Önce hedef belirleyin.','#d97706',3200);return;}
+  window._hedefAday=aday; _planHedefAuto=true; _planBulk=false; _planAlmayan=false; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Hedef Gelişim Eğitimleri</b><br><span class="muted">${_polSel.size?'Seçilen':'Tüm'} hedefli kayıtlardan <b>${aday.length}</b> tanesi (mevcut &lt; hedef) için eğitim planlanacak. Konu boş bırakılırsa her makine için otomatik atanır.</span>`;
+  document.getElementById('plKonu').value='';
+  document.getElementById('plTarih').value='';document.getElementById('plTur').value='İşbaşı Eğitim';
+  document.getElementById('plEgitici').value='';document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
+}
+
+// ===================== Eğitim Almayanlara Toplu Planlama =====================
+function _almSelInfoGuncelle(){
+  const n=_almSel.size;
+  const i=document.getElementById('almSelInfo'); if(i)i.textContent=n?`${n} seçili`:'';
+  const j=document.getElementById('almDashSelInfo'); if(j)j.textContent=n?`${n} kişi seçili`:'';
+}
+function toggleAlmSel(guid,on){if(on)_almSel.add(guid);else _almSel.delete(guid);_almSelInfoGuncelle();}
+function almSelAll(){(window._almData||[]).forEach(p=>_almSel.add(p.guid));renderKonuKart();}
+// Dashboard almayanlar tablosu (checkbox + lokasyon filtreli)
+function renderAlmayanDash(){
+  const lok=document.getElementById('almDashLokF').value;
+  const list=(window._almDash||[]).filter(v=>!lok||v.lok===lok);
+  document.getElementById('almayanBody').innerHTML=list.slice(0,500).map(v=>{
+    const chk=_almSel.has(v.guid)?'checked':'';
+    return`<tr><td><input type="checkbox" ${chk} onchange="toggleAlmSel('${esc(v.guid)}',this.checked)" style="cursor:pointer;accent-color:#1e7e4a;"></td><td><b>${esc(v.ad)}</b></td><td class="muted">${esc(v.dept||'')}</td><td class="muted">${esc(v.lok||'')}</td></tr>`;
+  }).join('')+(list.length>500?`<tr><td colspan="4" class="muted">… ${list.length-500} kişi daha</td></tr>`:'')
+  ||'<tr><td colspan="4" class="muted">Herkes eğitim almış 🎉</td></tr>';
+  _almSelInfoGuncelle();
+}
+function almDashSelAll(){
+  const lok=document.getElementById('almDashLokF').value;
+  const list=(window._almDash||[]).filter(v=>!lok||v.lok===lok);
+  const allSel=list.length>0&&list.every(v=>_almSel.has(v.guid));
+  if(allSel) list.forEach(v=>_almSel.delete(v.guid));
+  else list.forEach(v=>_almSel.add(v.guid));
+  renderAlmayanDash();
+}
+function openAlmPlanDash(){
+  if(!_almSel.size){toast('⚠ Önce personel seçin','#d97706',2200);return;}
+  window._almData=window._almDash||[]; window._almKonu='';
+  openAlmPlan();
+}
+function openAlmPlan(){
+  if(!_almSel.size){toast('⚠ Önce personel seçin','#d97706',2200);return;}
+  _planAlmayan=true; _planBulk=false; _planKey=null;
+  document.getElementById('planInfo').innerHTML=`<b>🎓 Toplu Eğitim Planı</b><br><span class="muted">"${esc(window._almKonu||'')}" eğitimini almayan ${_almSel.size} personele planlanacak.</span>`;
+  document.getElementById('plKonu').value=window._almKonu||'';
+  document.getElementById('plTarih').value='';document.getElementById('plTur').value='İç Eğitim';
+  document.getElementById('plEgitici').value='';document.getElementById('plSure').value='';
+  document.getElementById('plAciklama').value='';document.getElementById('plOlusturan').value='';
+  document.getElementById('plSilBtn').style.display='none';
+  document.getElementById('planModal').classList.add('show');
+}
+async function silPlanById(id){
+  if(!id||!confirm('Bu planlanan eğitim silinsin mi?'))return;
+  PLAN.delete(id); renderPol&&renderPol(); renderEgt(); renderDash();
+  try{await fetch(`${SUPA}/rest/v1/egt_plan?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});toast('🗑 Plan silindi','#64748b',1500);}
+  catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== DEĞİŞİKLİKLERİM (yönetim) =====================
+function changesSayisi(){return POL.filter(r=>r.kaynak==='manuel').length+EGT.filter(r=>r.kaynak==='manuel').length+HEDEF.size+PDEGER.size+DEGER.size+PLAN.size;}
+function updateChgCount(){const c=changesSayisi();document.querySelectorAll('.chg-count').forEach(el=>el.textContent=c||'');}
+// ── Admin modu (işlemler yalnızca admin) ──
+const ADMIN_SIFRE='sanifoam2026';
+function isAdmin(){return localStorage.getItem('egt_admin')==='1';}
+function applyAdmin(){const a=isAdmin();document.querySelectorAll('.admin-only').forEach(el=>el.style.display=a?'':'none');const b=document.getElementById('adminBtn');if(b){b.textContent=a?'🔓 Admin':'🔒 Admin';b.style.background=a?'#16a34a':'';}}
+function toggleAdmin(){
+  if(isAdmin()){localStorage.removeItem('egt_admin');applyAdmin();toast('Admin modundan çıkıldı','#64748b',1500);return;}
+  const s=prompt('Yönetici (admin) şifresi:'); if(s===null)return;
+  if(s===ADMIN_SIFRE){localStorage.setItem('egt_admin','1');applyAdmin();toast('🔓 Admin modu açıldı — işlemler görünür','#16a34a',2000);}
+  else toast('❌ Yanlış şifre','#dc2626',2000);
+}
+function grupHtml(baslik,items){
+  if(!items.length)return '';
+  return `<div style="margin-bottom:14px;"><div style="font-weight:700;color:#1e7e4a;border-bottom:2px solid #dcfce7;padding-bottom:4px;margin-bottom:6px;">${baslik} <span class="muted" style="font-weight:400;">(${items.length})</span></div>
+    <div style="max-height:200px;overflow:auto;">`+items.slice(0,300).map(o=>`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f1f5f9;font-size:.86em;">
+      <span>${esc(o.txt)}</span><button class="btn-dgr" style="background:#fee2e2;color:#991b1b;flex-shrink:0;" onclick="${o.sil}">🗑</button></div>`).join('')+
+    (items.length>300?`<div class="muted">… ${items.length-300} daha</div>`:'')+`</div></div>`;
+}
+function openChanges(){
+  const manPol=POL.filter(r=>r.kaynak==='manuel'), manEgt=EGT.filter(r=>r.kaynak==='manuel');
+  let h='';
+  h+=grupHtml('✏️ Manuel Yetkinlikler',manPol.map(r=>({txt:`${r.personel} — ${r.makine_adi} (Sv${r.yetenek})`,sil:`silManuelPol('${r.personel_guid||''}','${escAttr(r.makine_kodu)}');setTimeout(openChanges,250)`})));
+  h+=grupHtml('✏️ Manuel Eğitimler',manEgt.map(r=>({txt:`${r.personel} — ${(r.konu||'').slice(0,45)} (${r.plan_tarih||''})`,sil:`silManuelEgt('${escAttr(r.uid)}');setTimeout(openChanges,250)`})));
+  h+=grupHtml('🎯 Hedefler',[...HEDEF.entries()].map(([k,v])=>{const r=POL_BY_KEY.get(k)||{};return{txt:`${r.personel||'?'} — ${r.makine_adi||k} → Hedef ${v}`,sil:`silHedefByKey('${escAttr(k)}')`};}));
+  h+=grupHtml('🧩 Polivalans Değerlendirmeleri',[...PDEGER.values()].map(d=>{const r=POL_BY_KEY.get(d.id)||{};return{txt:`${r.personel||'?'} — ${r.makine_adi||''} (sv.${d.hesaplanan_seviye||'?'}, ${d.deger_tarihi||''})`,sil:`silPolDegerById('${escAttr(d.id)}')`};}));
+  h+=grupHtml('🎓 Etkinlik Değerlendirmeleri',[...DEGER.values()].map(d=>{const e=EGT_BY_UID.get(d.uid)||{};return{txt:`${e.personel||''} — ${(e.konu||'').slice(0,40)} (${d.etkinlik_sonuc||''}, ${d.deger_tarihi||''})`,sil:`silDegerByUid('${escAttr(d.uid)}')`};}));
+  h+=grupHtml('📅 Eğitim Planları',[...PLAN.values()].map(p=>({txt:`${p.personel||''} — ${(p.konu||'').slice(0,40)} (${p.plan_tarih||''})`,sil:`silPlanById('${escAttr(p.id)}');setTimeout(openChanges,250)`})));
+  document.getElementById('changesBody').innerHTML=h||'<div class="muted" style="padding:20px;text-align:center;">Henüz bir değişiklik/giriş yapmadınız.</div>';
+  document.getElementById('changesModal').classList.add('show');
+}
+function closeChanges(){document.getElementById('changesModal').classList.remove('show');updateChgCount();}
+async function silHedefByKey(key){HEDEF.delete(key);renderPol();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_hedef?id=eq.${encodeURIComponent(key)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silPolDegerById(id){PDEGER.delete(id);renderPol();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=eq.${encodeURIComponent(id)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silDegerByUid(uid){DEGER.delete(uid);renderEgt();renderDash();openChanges();updateChgCount();
+  try{await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:{apikey:ANON,Authorization:'Bearer '+ANON}});}catch(e){}}
+async function silTumDegisiklik(){
+  if(!confirm('TÜM kendi değişiklikleriniz (manuel kayıtlar, hedefler, değerlendirmeler, planlar) silinecek. Emin misiniz?'))return;
+  const manPolIds=POL.filter(r=>r.kaynak==='manuel').map(r=>r.pol_inckey);
+  const manEgtIds=EGT.filter(r=>r.kaynak==='manuel').map(r=>r.uid);
+  POL=POL.filter(r=>r.kaynak!=='manuel'); EGT=EGT.filter(r=>r.kaynak!=='manuel');
+  HEDEF.clear(); PDEGER.clear(); DEGER.clear(); PLAN.clear();
+  POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
+  closeChanges(); renderPol(); renderEgt(); renderDash();
+  const H={apikey:ANON,Authorization:'Bearer '+ANON};
+  try{
+    for(const id of manPolIds) await fetch(`${SUPA}/rest/v1/egt_polivalans?pol_inckey=eq.${id}`,{method:'DELETE',headers:H});
+    for(const uid of manEgtIds) await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_hedef?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_polivalans_deger?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_degerlendirme?uid=neq.__zzz__`,{method:'DELETE',headers:H});
+    await fetch(`${SUPA}/rest/v1/egt_plan?id=neq.__zzz__`,{method:'DELETE',headers:H});
+    toast('🗑 Tüm değişiklikleriniz silindi','#64748b',2200);
+  }catch(e){toast('Bazıları silinemedi: '+e.message,'#dc2626',4000);}
+}
+
+// ===================== KPI HEDEFLERİ =====================
+function openKpi(){
+  document.getElementById('kpiKisiSaat').value=AYAR.kpi_kisi_yil_saat||'';
+  document.getElementById('kpiOran').value=AYAR.kpi_oran||'';
+  document.getElementById('kpiAySaat').value=AYAR.kpi_ay_saat||'';
+  document.getElementById('kpiModal').classList.add('show');
+}
+function closeKpi(){document.getElementById('kpiModal').classList.remove('show');}
+async function kaydetKpi(){
+  const rows=[
+    {anahtar:'kpi_kisi_yil_saat',deger:document.getElementById('kpiKisiSaat').value||''},
+    {anahtar:'kpi_oran',deger:document.getElementById('kpiOran').value||''},
+    {anahtar:'kpi_ay_saat',deger:document.getElementById('kpiAySaat').value||''}
+  ];
+  rows.forEach(r=>AYAR[r.anahtar]=r.deger); closeKpi(); renderDash();
+  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 KPI hedefleri kaydedildi','#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+function openKpiPol(){
+  document.getElementById('kpiPolOrt').value=AYAR.kpi_pol_ort||'';
+  document.getElementById('kpiPolYetkin').value=AYAR.kpi_pol_yetkin||'';
+  document.getElementById('kpiPolKritik').value=AYAR.kpi_pol_kritik||'';
+  document.getElementById('kpiPolModal').classList.add('show');
+}
+function closeKpiPol(){document.getElementById('kpiPolModal').classList.remove('show');}
+async function kaydetKpiPol(){
+  const rows=[
+    {anahtar:'kpi_pol_ort',deger:document.getElementById('kpiPolOrt').value||''},
+    {anahtar:'kpi_pol_yetkin',deger:document.getElementById('kpiPolYetkin').value||''},
+    {anahtar:'kpi_pol_kritik',deger:document.getElementById('kpiPolKritik').value||''}
+  ];
+  rows.forEach(r=>AYAR[r.anahtar]=r.deger); closeKpiPol(); renderPolDash();
+  try{await _batchUpsert('egt_ayar',rows,'anahtar');toast('🎯 Polivalans KPI hedefleri kaydedildi','#16a34a',2000);}
+  catch(e){toast('❌ Kaydedilemedi (egt_ayar tablosu oluşturuldu mu?): '+e.message,'#dc2626',5000);}
+}
+
+// ===================== GERÇ. TARİH INLINE EDIT =====================
+async function saveGercTarih(uid,tarih){
+  const r=EGT_BY_UID.get(uid);if(!r)return;
+  r.kayit_tarih=tarih||null;
+  r.gerceklesme=tarih?1:0;
+  renderEgt();renderDash();
+  try{
+    await fetch(`${SUPA}/rest/v1/egt_egitim?uid=eq.${encodeURIComponent(uid)}`,{method:'PATCH',
+      headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({kayit_tarih:tarih||null,gerceklesme:tarih?1:0})});
+    toast('📅 Gerçekleşme tarihi kaydedildi','#16a34a',1800);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',4000);}
+}
+// ===================== TOPLU TAMAMLA — sadece tarihi geçmiş/bugün olanlar =====================
+let _egtUndoBuf=null;
+async function topluTamamla(){
+  const today=bugun();
+  const aday=egtFiltered().filter(r=>!r._plan&&!r.gerceklesme&&r.plan_tarih&&r.plan_tarih<=today);
+  if(!aday.length){toast('Tarihi gelmiş bekleyen eğitim yok (plan tarihi ≤ bugün)','#d97706',3000);return;}
+  if(!confirm(`Plan tarihi bugün veya geçmişte olan ${aday.length} eğitim "Gerçekleşti" olarak işaretlenecek. Devam?`))return;
+  // Geri alma için önceki durumu sakla
+  _egtUndoBuf=aday.map(r=>({uid:r.uid,kayit_tarih:r.kayit_tarih,gerceklesme:r.gerceklesme}));
+  aday.forEach(r=>{r.gerceklesme=1;r.kayit_tarih=r.plan_tarih;});
+  renderEgt();renderDash();
+  const btn=document.getElementById('egtUndoBtn');if(btn)btn.style.display='';
+  try{
+    await _batchUpsert('egt_egitim',aday.map(r=>({uid:r.uid,gerceklesme:1,kayit_tarih:r.kayit_tarih})),'uid');
+    toast(`✅ ${aday.length} eğitim tamamlandı · İşlemler → ↩ Geri Al ile iptal edebilirsiniz`,'#16a34a',5000);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+async function egtUndo(){
+  if(!_egtUndoBuf||!_egtUndoBuf.length){toast('Geri alınacak işlem yok','#d97706',2000);return;}
+  if(!confirm(`${_egtUndoBuf.length} eğitimin tamamlandı işareti geri alınacak. Devam?`))return;
+  _egtUndoBuf.forEach(b=>{const r=EGT_BY_UID.get(b.uid);if(r){r.kayit_tarih=b.kayit_tarih;r.gerceklesme=b.gerceklesme;}});
+  const buf=_egtUndoBuf; _egtUndoBuf=null;
+  const btn=document.getElementById('egtUndoBtn');if(btn)btn.style.display='none';
+  renderEgt();renderDash();
+  try{
+    await _batchUpsert('egt_egitim',buf.map(b=>({uid:b.uid,gerceklesme:b.gerceklesme,kayit_tarih:b.kayit_tarih})),'uid');
+    toast(`↩ ${buf.length} eğitim geri alındı`,'#0891b2',2500);
+  }catch(e){toast('❌ Geri alınamadı: '+e.message,'#dc2626',5000);}
+}
+// ===================== EĞİTİM ÇOKLU SEÇİM + SİL (yalnız manuel) =====================
+let _egtSel=new Set();
+function toggleEgtSel(uid,on){
+  if(on)_egtSel.add(uid);else _egtSel.delete(uid);
+  _egtBulkUpdate();
+}
+function egtSelAll(on){
+  const manuelRows=egtFiltered().filter(r=>!r._plan&&r.kaynak==='manuel');
+  if(on)manuelRows.forEach(r=>_egtSel.add(r.uid));
+  else _egtSel.clear();
+  renderEgt();
+}
+function _egtBulkUpdate(){
+  const bar=document.getElementById('egtBulkBar');
+  const n=_egtSel.size;
+  bar.style.display=n?'flex':'none';
+  document.getElementById('egtSelCount').textContent=n+' kayıt seçili';
+  const chkAll=document.getElementById('egtChkAll');
+  if(chkAll){const manN=egtFiltered().filter(r=>!r._plan&&r.kaynak==='manuel').length;chkAll.checked=n>0&&n>=manN;chkAll.indeterminate=n>0&&n<manN;}
+}
+async function topluBekleyeAl(){
+  const uids=[..._egtSel].filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak==='manuel'&&r.gerceklesme;});
+  if(!uids.length){toast('Seçili gerçekleşmiş manuel kayıt yok','#d97706',2500);return;}
+  if(!confirm(`${uids.length} kayıt "Bekliyor" durumuna alınacak (gerçekleşme tarihi silinecek). Devam?`))return;
+  uids.forEach(uid=>{const r=EGT_BY_UID.get(uid);if(r){r.gerceklesme=0;r.kayit_tarih=null;}});
+  _egtSel.clear();renderEgt();renderDash();
+  try{
+    for(let i=0;i<uids.length;i+=50){
+      const chunk=uids.slice(i,i+50);
+      const inList=chunk.map(u=>`"${u}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'PATCH',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON,'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({gerceklesme:0,kayit_tarih:null})});
+    }
+    toast(`↩ ${uids.length} kayıt "Bekliyor" durumuna alındı`,'#d97706',2500);
+  }catch(e){toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000);}
+}
+async function topluEgtSil(){
+  const uids=[..._egtSel];
+  // Güvenlik: sadece manuel kayıtları sil
+  const manuelUids=uids.filter(uid=>{const r=EGT_BY_UID.get(uid);return r&&r.kaynak==='manuel';});
+  const leansysVar=uids.length-manuelUids.length;
+  if(!manuelUids.length){toast('Seçili kayıtlar arasında silinebilir (manuel) kayıt yok','#d97706',3000);return;}
+  let msg=`${manuelUids.length} manuel eğitim kaydı silinecek.`;
+  if(leansysVar)msg+=` (${leansysVar} LeanSys kaydı korunacak)`;
+  if(!confirm(msg+' Devam?'))return;
+  manuelUids.forEach(uid=>{EGT=EGT.filter(r=>r.uid!==uid);EGT_BY_UID.delete(uid);});
+  _egtSel.clear();
+  buildFilters();renderEgt();renderDash();updateChgCount();
+  try{
+    for(let i=0;i<manuelUids.length;i+=50){
+      const chunk=manuelUids.slice(i,i+50);
+      const inList=chunk.map(u=>`"${u}"`).join(',');
+      await fetch(`${SUPA}/rest/v1/egt_egitim?uid=in.(${inList})`,{method:'DELETE',
+        headers:{apikey:ANON,Authorization:'Bearer '+ANON}});
+    }
+    toast(`🗑 ${manuelUids.length} kayıt silindi`,'#64748b',2000);
+  }catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',5000);}
+}
+// ===================== TOPLU OTOMATİK DEĞERLENDİRME =====================
+async function topluOtoDeger(){
+  const aday=egtFiltered().filter(r=>!r._plan&&r.gerceklesme&&!DEGER.has(r.uid));
+  if(!aday.length){toast('Değerlendirilecek (gerçekleşmiş, boş) eğitim yok','#d97706',2800);return;}
+  if(!confirm(`${aday.length} eğitim kaydı OLUMLU (Etkili) ve ${bugun()} tarihli olarak otomatik değerlendirilecek. Devam?`))return;
+  const rows=aday.map(r=>({uid:r.uid,etk_uygulama:'Evet',etk_hedef:'Evet',etk_performans:'Evet',
+    etkinlik_sonuc:'Etkili',deger_tarihi:bugun(),degerlendiren:'Otomatik'}));
+  rows.forEach(rec=>DEGER.set(rec.uid,rec)); renderEgt(); renderDash(); updateChgCount();
+  try{await _batchUpsert('egt_degerlendirme',rows,'uid');toast(`✅ ${rows.length} eğitim değerlendirildi (${bugun()})`,'#16a34a',2500);}
+  catch(e){toast('❌ '+e.message,'#dc2626',5000);}
+}
+async function topluOtoPolDeger(){
+  const aday=polFiltered().filter(r=>!PDEGER.has((r.personel_guid||'')+'|'+(r.makine_kodu||'')));
+  if(!aday.length){toast('Değerlendirilecek boş yetkinlik yok','#d97706',2800);return;}
+  if(!confirm(`${aday.length} yetkinlik kaydı MEVCUT seviyeye göre ${bugun()} tarihli olarak otomatik değerlendirilecek (checklist dolar). Devam?`))return;
+  const rows=aday.map(r=>{
+    const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const m=+r.yetenek||0;
+    const chk={}; for(let s=1;s<=4;s++)chk[s]=PKRITER[s].map(()=>s<=m);
+    return {id:key,personel_guid:r.personel_guid,makine_kodu:r.makine_kodu,checklist:chk,
+      hesaplanan_seviye:m,deger_tarihi:bugun(),degerlendiren:'Otomatik'};
+  });
+  rows.forEach(rec=>PDEGER.set(rec.id,rec)); renderPol(); updateChgCount();
+  try{await _batchUpsert('egt_polivalans_deger',rows,'id');toast(`✅ ${rows.length} yetkinlik değerlendirildi (${bugun()})`,'#16a34a',2500);}
+  catch(e){toast('❌ '+e.message,'#dc2626',5000);}
+}
+
+// ===================== EGITIM =====================
+function _planli(s){return s==='Etkili Değil'||s==='Kısmen Etkili';}
+function planAsEgt(p){
+  return {uid:'plan_'+p.id, _plan:true, _planKey:p.id, yil:String(p.plan_tarih||'').slice(0,4),
+    konu:p.konu, turu:p.tur||'Planlanan', lokasyon:p.lokasyon, plan_tarih:p.plan_tarih, kayit_tarih:null,
+    sure:p.sure, personel:p.personel, personel_guid:p.personel_guid, makine_kodu:p.makine_kodu, egitici:p.egitici, gerceklesme:0};
+}
+// Etkinlik değerlendirmesinden opsiyonel planlanan tekrar/gelişim eğitimleri
+function degerAsEgt(d){
+  const e=EGT_BY_UID.get(d.uid)||{};
+  return {uid:'eup_'+d.uid, _plan:true, _degerUid:d.uid, yil:String(d.tekrar_egitim_tarihi||'').slice(0,4),
+    konu:d.tekrar_konu||e.konu, turu:d.tekrar_tur||'Tekrar/Gelişim Eğitimi', lokasyon:e.lokasyon, plan_tarih:d.tekrar_egitim_tarihi,
+    kayit_tarih:null, sure:e.sure, personel:e.personel, personel_guid:e.personel_guid, makine_kodu:'', egitici:e.egitici, gerceklesme:0};
+}
+function allEgt(){
+  const pol=[...PLAN.values()].map(planAsEgt);
+  const etk=[...DEGER.values()].filter(d=>d.tekrar_egitim_tarihi).map(degerAsEgt);
+  return EGT.concat(pol,etk);
+}
+function egtFiltered(){
+  const q=document.getElementById('egtSearch').value.toLowerCase().trim();
+  const yil=document.getElementById('egtYil').value;
+  const lok=document.getElementById('egtLok').value;
+  const dur=document.getElementById('egtDurum').value;
+  const dgr=document.getElementById('egtDeger').value;
+  return allEgt().filter(r=>{
+    if(yil&&r.yil!==yil)return false;
+    if(lok&&r.lokasyon!==lok)return false;
+    if(dur==='plan'){ if(!r._plan)return false; }
+    else if(dur!==''){ if(r._plan)return false; if(String(r.gerceklesme||0)!==dur)return false; }
+    if(dgr==='var'&&!DEGER.has(r.uid))return false;
+    if(dgr==='yok'&&DEGER.has(r.uid))return false;
+    if(dgr==='etkisiz'&&(DEGER.get(r.uid)||{}).etkinlik_sonuc!=='Etkili Değil')return false;
+    if(dgr==='tekrar'&&!(DEGER.get(r.uid)||{}).tekrar_egitim_tarihi)return false;
+    if(q){const s=((r.personel||'')+' '+(r.konu||'')+' '+(r.egitici||'')+' '+(r.turu||'')).toLowerCase();if(!s.includes(q))return false;}
+    return true;
+  });
+}
+function sortEgt(k){egtSort.dir=egtSort.k===k?-egtSort.dir:1;egtSort.k=k;renderEgt();}
+function renderEgt(){
+  let rows=egtFiltered();const k=egtSort.k,d=egtSort.dir;
+  rows.sort((a,b)=>{let x=a[k]??'',y=b[k]??'';if(k==='not_sonra'||k==='gerceklesme'||k==='sure'){x=+x||0;y=+y||0;return (x-y)*d;}return String(x).localeCompare(String(y),'tr')*d;});
+  document.getElementById('egtTotal').textContent=rows.length;
+  document.getElementById('egtOk').textContent=rows.filter(r=>r.gerceklesme).length;
+  document.getElementById('egtKonu').textContent=new Set(rows.map(r=>r.konu)).size;
+  const cap=rows.slice(0,3000);
+  document.getElementById('egtBody').innerHTML=cap.map(r=>{
+    if(r._plan){
+      return `<tr style="background:#eff6ff;">
+        <td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>🎓 ${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+        <td class="muted">${esc(r.plan_tarih||'')}</td><td class="muted">—</td><td>${r.sure!=null?esc(r.sure):''}</td>
+        <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici||'')}</td>
+        <td><span class="badge" style="background:#dbeafe;color:#1e40af;">🎓 Planlandı</span></td>
+        <td>—</td><td class="muted">${esc(r.turu||'')}</td><td>${r._degerUid?`<button class="btn-dgr" onclick="openDeger('${esc(r._degerUid)}')">Düzenle</button>`:(r.makine_kodu?`<button class="btn-dgr" onclick="openEgitimPlan('${r.personel_guid||''}','${escAttr(r.makine_kodu)}')">Düzenle</button>`:`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="silPlanById('${esc(r._planKey)}')">🗑 Sil</button>`)}</td></tr>`;
+    }
+    const d=DEGER.get(r.uid);
+    let dgrBtn;
+    if(d){
+      const s=d.etkinlik_sonuc;
+      if(s==='Etkili Değil'){
+        dgrBtn=`<button class="btn-dgr" style="background:#fee2e2;color:#991b1b;" onclick="openDeger('${esc(r.uid)}')">⚠ Etkili Değil${d.tekrar_egitim_tarihi?' → '+esc(d.tekrar_egitim_tarihi):''}</button>`;
+      }else if(s==='Kısmen Etkili'){
+        dgrBtn=`<button class="btn-dgr" style="background:#fef3c7;color:#92400e;" onclick="openDeger('${esc(r.uid)}')">◐ Kısmen</button>`;
+      }else{
+        dgrBtn=`<button class="btn-dgr done" onclick="openDeger('${esc(r.uid)}')">✓ ${esc(s||'Değerlendirildi')}</button>`;
+      }
+    }else dgrBtn=`<button class="btn-dgr" onclick="openDeger('${esc(r.uid)}')">Değerlendir</button>`;
+    if(d&&d.deger_tarihi)dgrBtn+=`<br><span class="muted" style="font-size:.8em;">📅 ${esc(d.deger_tarihi)}</span>`;
+    const isManuel=r.kaynak==='manuel';
+    const chkCell=isManuel
+      ?`<td><input type="checkbox" ${_egtSel.has(r.uid)?'checked':''} onchange="toggleEgtSel('${escAttr(r.uid)}',this.checked)" style="cursor:pointer;accent-color:#7c3aed;"></td>`
+      :'<td></td>';
+    const manDot=isManuel?'<span style="color:#7c3aed;font-size:.75em;vertical-align:middle;margin-right:3px;" title="Manuel kayıt">●</span>':'';
+    return `<tr${isManuel?' style="background:#faf5ff;"':''}>
+    ${chkCell}<td>${esc(r.yil||'')}</td><td class="muted">${esc(r.lokasyon||'')}</td><td><b>${manDot}${esc(r.konu)}</b></td><td class="muted">${esc(r.turu)}</td>
+    <td class="muted">${esc(r.plan_tarih||'')}</td><td><input type="date" value="${r.kayit_tarih||''}" onchange="saveGercTarih('${escAttr(r.uid)}',this.value)" style="border:none;background:transparent;font-size:.83em;color:#64748b;cursor:pointer;padding:0;width:110px;" title="Gerçekleşme tarihini düzenle"></td><td>${r.sure!=null?esc(r.sure):''}</td>
+    <td>${esc(r.personel)}</td><td class="muted">${esc(r.egitici)}</td>
+    <td>${r.gerceklesme?'<span class="badge b-ok">Gerçekleşti</span>':'<span class="badge b-no">Bekliyor</span>'}</td>
+    <td>${r.not_sonra!=null?esc(r.not_sonra):''}${(r.not_once!=null&&r.not_once!=='')?` <span class="muted">(ön:${esc(r.not_once)})</span>`:''}</td>
+    <td>${esc(r.degerlendirme||'')}${(r.onceki_olcum||r.yeni_olcum)?`<br><span class="muted" style="font-size:.85em;">ölçüm: ${esc(r.onceki_olcum||'?')}→${esc(r.yeni_olcum||'?')}</span>`:''}</td>
+    <td>${dgrBtn}</td></tr>`;}).join('')
+    +(rows.length>3000?`<tr><td colspan="13" class="muted">… ${rows.length-3000} kayıt daha (filtre daraltın)</td></tr>`:'');
+}
+
+// ===================== LeanSys Güncelle =====================
+async function refreshFromLeanSys(){
+  const btn=document.getElementById('btnLs');btn.disabled=true;const old=btn.textContent;
+  btn.textContent='⏳ LeanSys güncelleniyor...';
+  try{
+    const ctrl=new AbortController();const tmo=setTimeout(()=>ctrl.abort(),300000);
+    const res=await fetch('http://127.0.0.1:17777/refreshegitim',{signal:ctrl.signal});
+    clearTimeout(tmo);
+    const j=await res.json();
+    if(j&&j.ok){toast('✅ LeanSys güncellendi ('+j.count+'). Yenileniyor...');await loadAll(false);toast('✅ Tamamlandı.');}
+    else{toast('⚠️ Güncelleme atlandı: '+((j&&j.error)||'bilinmeyen')+'. Mevcut veri gösteriliyor.','#d97706',6000);await loadAll(false);}
+  }catch(e){
+    console.warn(e);
+    toast('ℹ️ Yerel güncelleme servisi yanıt vermedi (VPN/agent kapalı olabilir). Mevcut veri gösteriliyor.','#d97706',6000);
+    await loadAll(false);
+  }finally{btn.disabled=false;btn.textContent=old;}
+}
+
+// ===================== Excel =====================
+function exportXlsx(which){
+  let rows,name;
+  if(which==='pol'){rows=polFiltered().map(r=>{const mevcut=+r.yetenek||0;const h=HEDEF.get(hedefKey(r))||'';const gap=h?h-mevcut:0;const pd=PDEGER.get(hedefKey(r))||{};const pl=PLAN.get(hedefKey(r))||{};return{Personel:r.personel,Lokasyon:r.lokasyon,Departman:r.departman,'Proses Grubu':r.makinegrup_adi,'Makine/Konu':r.makine_adi,Kod:r.makine_kodu,Mevcut:mevcut,Hedef:h||'',Durum:!h?'':(gap<=0?'Yeterli':gap+' seviye eksik'),'Gerekli Eğitim':gap>0?egitimOneri(mevcut,h):'','Değerlendirme Tarihi':pd.deger_tarihi||'','Değerlendirme Seviyesi':pd.hesaplanan_seviye||'','Değerlendiren':pd.degerlendiren||'','Planlanan Eğitim Konusu':pl.konu||'','Planlanan Eğitim Tarihi':pl.plan_tarih||'','Planlanan Tür':pl.tur||'','Planlanan Eğitici':pl.egitici||''};});name='polivalans';}
+  else if(which==='egt'){rows=egtFiltered().map(r=>{const d=DEGER.get(r.uid)||{};return{Yıl:r.yil,Lokasyon:r.lokasyon,Konu:r.konu,Tür:r.turu,'Plan Tarihi':r.plan_tarih,'Gerçekleşme Tarihi':r.kayit_tarih,Süre:r.sure,Personel:r.personel,Eğitici:r.egitici,Durum:r.gerceklesme?'Gerçekleşti':'Bekliyor','Sınav Notu':r.not_sonra,'Sınav Öncesi':r.not_once,'Değ. Yöntemi':r.degerlendirme||'','Ölçüm Öncesi':r.onceki_olcum||'','Ölçüm Sonrası':r.yeni_olcum||'','Uygulandı':d.etk_uygulama||'','Hedefe Ulaşım':d.etk_hedef||'','Performans':d.etk_performans||'','Etkinlik Sonucu':d.etkinlik_sonuc||'','Tekrar Eğitim Tarihi':d.tekrar_egitim_tarihi||'','Etkinlik Açıklama':d.etk_aciklama||'','Değerlendiren':d.degerlendiren||''};});name='egitim';}
+  else{rows=(window._almayan||[]).map(v=>({Personel:v.ad,Departman:v.dept,Lokasyon:v.lok}));name='egitim_almayanlar';}
+  const ws=XLSX.utils.json_to_sheet(rows);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,name);
+  XLSX.writeFile(wb,name+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+document.getElementById('degerModal').addEventListener('click',e=>{if(e.target.id==='degerModal')closeDeger();});
+document.getElementById('polModal').addEventListener('click',e=>{if(e.target.id==='polModal')closePolDeger();});
+document.getElementById('planModal').addEventListener('click',e=>{if(e.target.id==='planModal')closePlan();});
+document.getElementById('mPolModal').addEventListener('click',e=>{if(e.target.id==='mPolModal')closeMPol();});
+document.getElementById('mEgtModal').addEventListener('click',e=>{if(e.target.id==='mEgtModal')closeMEgt();});
+document.getElementById('kopyaModal').addEventListener('click',e=>{if(e.target.id==='kopyaModal')closeKopya();});
+document.getElementById('changesModal').addEventListener('click',e=>{if(e.target.id==='changesModal')closeChanges();});
+document.getElementById('kpiModal').addEventListener('click',e=>{if(e.target.id==='kpiModal')closeKpi();});
+document.getElementById('kpiPolModal').addEventListener('click',e=>{if(e.target.id==='kpiPolModal')closeKpiPol();});
+function closeAllMenus(){document.querySelectorAll('.dropdown-menu').forEach(m=>m.classList.remove('show'));}
+function toggleMenu(id){const m=document.getElementById(id);const open=m.classList.contains('show');closeAllMenus();if(!open)m.classList.add('show');}
+document.addEventListener('click',e=>{
+  if(e.target.closest('.dropdown-menu button')){closeAllMenus();return;}
+  if(!e.target.closest('.dropdown'))closeAllMenus();
+});
+applyAdmin();
+loadAll(true);
