@@ -997,8 +997,14 @@ function renderPolDash(){
   const ort=yetler.length?(yetler.reduce((s,v)=>s+v,0)/yetler.length):0;
   let hedefli=0,gapli=0;
   p.forEach(r=>{const h=HEDEF.get((r.personel_guid||'')+'|'+(r.makine_kodu||''));if(h){hedefli++;if((+r.yetenek||0)<h)gapli++;}});
+  // YEDEKLEME/KAPSAMA yalnizca LOKASYONA gore suzulur.
+  // "Bu makineyi kac kisi calistirabilir" bir MAKINE sorusudur; kisi
+  // hangi departmanda olursa olsun yedektir. Departman suzgeciyle
+  // CNC DIKEY SABLE'i Ankara'da 5 kisi calistirabilirken ekranda
+  // "tek kisiye bagimli" yaziyordu.
+  const pKaps=POL.filter(r=>(!lok||r.lokasyon===lok));
   // makine bazlı yetkin (sv3+) sayıları
-  const mkY=new Map(); p.forEach(r=>{const k=r.makine_kodu||r.makine_adi;if(!mkY.has(k))mkY.set(k,0);if((+r.yetenek||0)>=3)mkY.set(k,mkY.get(k)+1);});
+  const mkY=new Map(); pKaps.forEach(r=>{const k=r.makine_kodu||r.makine_adi;if(!mkY.has(k))mkY.set(k,0);if((+r.yetenek||0)>=3)mkY.set(k,mkY.get(k)+1);});
   const makSay=mkY.size, kritikSay=[...mkY.values()].filter(v=>v<=1).length;
   const kritikOran=makSay?(kritikSay/makSay*100):0;
   const yetkinSay=p.filter(r=>(+r.yetenek||0)>=3).length, yetkinOran=p.length?(yetkinSay/p.length*100):0;
@@ -1045,7 +1051,7 @@ function renderPolDash(){
   drawBar('pdChGap','Gap Sayısı',gapE.map(x=>x[0].length>30?x[0].slice(0,30)+'…':x[0]),gapE.map(x=>x[1]),'#e11d48',true);
   // makine yetkinlik kapsama / yedekleme: her makine için yetkin (sv3-4) kişi sayısı
   const mkMap=new Map();
-  p.forEach(r=>{
+  pKaps.forEach(r=>{
     const k=r.makine_kodu||r.makine_adi; if(!mkMap.has(k)) mkMap.set(k,{adi:r.makine_adi,grup:r.makinegrup_adi,toplam:0,yetkin:0,uzman:0});
     const m=mkMap.get(k); m.toplam++; const y=+r.yetenek||0; if(y>=3)m.yetkin++; if(y===4)m.uzman++;
   });
@@ -1054,7 +1060,11 @@ function renderPolDash(){
   if(yf==='kritik') mkArr=mkArr.filter(m=>m.yetkin<=1);
   else if(yf==='iyi') mkArr=mkArr.filter(m=>m.yetkin>=2);
   mkArr.sort((a,b)=>a.yetkin-b.yetkin||String(a.adi).localeCompare(String(b.adi),'tr'));
-  document.getElementById('pdYedekInfo').textContent=`${mkMap.size} makine/proses · ${kritikSay} tanesi kritik (≤1 yetkin kişi)`;
+  // Uygulanan kapsam YAZILIR: sessizce suzulmus sayi veri hatasi gibi gorunmesin.
+  document.getElementById('pdYedekInfo').textContent=
+    `${mkMap.size} makine/proses · ${kritikSay} tanesi kritik (≤1 yetkin kişi)`
+    + ` · kapsam: ${lok||'tüm lokasyonlar'}, tüm departmanlar`
+    + (dept?` (departman filtresi bu tabloya uygulanmaz)`:'');
   document.getElementById('pdYedekBody').innerHTML=mkArr.slice(0,500).map(m=>{
     const dur = m.yetkin===0 ? '<span class="badge b-no">🔴 Yetkin yok</span>'
       : m.yetkin===1 ? '<span class="badge" style="background:#fef3c7;color:#92400e;">🟡 Tek kişiye bağımlı</span>'
