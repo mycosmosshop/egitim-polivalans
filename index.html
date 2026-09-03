@@ -140,9 +140,12 @@
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🔢 Aylık Eğitim Adeti — Planlanan vs Gerçekleşen</h3><div class="chart-box tall"><canvas id="chAylikAdet"></canvas></div></div>
-      <div class="chart-card"><h3>📊 Eğitim Türü Dağılımı</h3><div class="chart-box tall"><canvas id="chTurAdet"></canvas></div></div>
+      <div class="chart-card"><h3>📈 Aylık Plan Gerçekleşme Oranı (%)
+        <span class="muted" style="font-weight:400;font-size:.8em;">o ay planlananın kaçı alındı</span></h3>
+        <div class="chart-box tall"><canvas id="chAylikOran"></canvas></div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
+      <div class="chart-card"><h3>📊 Eğitim Türü Dağılımı</h3><div class="chart-box tall"><canvas id="chTurAdet"></canvas></div></div>
       <div class="chart-card"><h3>🏢 Departman Bazlı Adam·Saat</h3><div class="chart-box"><canvas id="chDept"></canvas></div></div>
       <div class="chart-card"><h3>📖 En Çok Eğitilen Konular (Adam·Saat)</h3><div class="chart-box"><canvas id="chKonu"></canvas></div></div>
     </div>
@@ -2223,17 +2226,31 @@ function renderDash(){
   const planSess=new Set(), gerSess=new Set();
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!planSess.has(k)){planSess.add(k);ayPlanAdet[m]++;}}}});
   ger.forEach(r=>{const d=gerAy(r);if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!gerSess.has(k)){gerSess.add(k);ayGerAdet[m]++;}}}});
-  // Gerceklesme orani hedefi (%) hicbir grafikte gorunmuyordu. Aylik
-  // adet grafiginde "planin %X'i" cizgisi olarak cizilir: turetme
-  // aciklanabilir, uydurma veri degil.
+  // Oran hedefi ADET grafiginde degil, kendi biriminde (%) asagidaki
+  // "Aylik Plan Gerceklesme Orani" grafiginde cizilir.
   const hOranK=kpiTam('kpi_oran',lok,yil); const hOranV=parseFloat(hOranK.deger)||0;
-  const adetDs=[
+  drawGrouped('chAylikAdet',AYLAR,[
     {label:'Planlanan',data:ayPlanAdet,color:'#cbd5e1'},
-    {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}];
-  if(hOranV) adetDs.push({
-    label:`Hedef · planın %${hOranV}'i${hOranK.miras?' (genel)':''}`,
-    data:ayPlanAdet.map(v=>+(v*hOranV/100).toFixed(2)),type:'line',color:'#e11d48'});
-  drawGrouped('chAylikAdet',AYLAR,adetDs);
+    {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}
+  ]);
+
+  // --- Aylık plan gerçekleşme oranı (%) ---
+  // Pay ve payda AYNI aya (PLAN ayina) gore sayilir: adet grafiginde
+  // planlanan plan ayina, gerceklesen kayit ayina yaziliyor; bunlari
+  // bolmek Mart'ta planlanip Agustos'ta kaydedilen egitimde Mart'i
+  // %0, Agustos'u %200 gosterirdi.
+  const ayPlanN=Array(12).fill(0), ayGerN=Array(12).fill(0);
+  e.forEach(r=>{
+    const d=r.plan_tarih||r.kayit_tarih; if(!d)return;
+    const m=+String(d).slice(5,7)-1; if(m<0||m>11)return;
+    ayPlanN[m]++; if(r.gerceklesme)ayGerN[m]++;
+  });
+  // Plani olmayan ay 0 degil BOS: 0 gostermek basarisizlik gibi okunur.
+  const ayOran=ayPlanN.map((n,i)=>n?+(ayGerN[i]/n*100).toFixed(1):null);
+  const oranDs=[{label:'Gerçekleşme %',data:ayOran,color:'#1e7e4a'}];
+  if(hOranV)oranDs.push({label:kpiEtiket('Hedef','%'+hOranV,hOranK.miras),
+    data:Array(12).fill(hOranV),type:'line',color:'#e11d48'});
+  drawGrouped('chAylikOran',AYLAR,oranDs);
 
   // --- Tür bazlı planlanan vs gerçekleşen adet ---
   const turPlanMap={},turGerMap={};
