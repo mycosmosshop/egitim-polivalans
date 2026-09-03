@@ -119,6 +119,7 @@
       <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
       <span class="muted" id="dashInfo"></span>
     </div>
+    <div id="dashUyari"></div>
     <div class="stats">
       <div class="stat blue"><div class="v" id="dAdamSaat">—</div><div class="l">Gerçekleşen Adam·Saat</div></div>
       <div class="stat"><div class="v" id="dPlanSaat">—</div><div class="l">Planlanan Adam·Saat</div></div>
@@ -831,6 +832,7 @@ const SUPA='https://nnubrxbpthmkitueixbh.supabase.co';
 const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5udWJyeGJwdGhta2l0dWVpeGJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NjI2MDIsImV4cCI6MjA5NjEzODYwMn0.CHZUOylf_q8kkOQbFf9VWZ6-doUTlynmAhahM2EuImE';
 let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4)
 let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
+let _EGT_BAYRAKSIZ=0;                   // egitim kaydi var ama plan kutucugu isaretsiz
 let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
 let _modalUid=null;
 let PDEGER=new Map();                   // PDEGER: "guid|makine_kodu" -> {checklist,hesaplanan_seviye,deger_tarihi,...}
@@ -911,6 +913,12 @@ async function loadAll(notify){
     DEGER=new Map(degerRows.map(r=>[r.uid,r]));
     PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
     PLAN=new Map(planRows.map(r=>[r.id,r]));
+    // ALINDI mi? LeanSys'te plan satirinin "Gerceklesme" kutucugu, egitim
+    // KAYDI girildigi halde isaretlenmeden kalabiliyor (olcum: 116 satir).
+    // Kayit tarihi varsa egitim yapilmistir; kutucuk ozeti guvenilmez.
+    // Gercek PLAN = kutucuk yok VE kayit tarihi yok.
+    _EGT_BAYRAKSIZ = EGT.filter(r=>!r.gerceklesme&&r.kayit_tarih).length;
+    EGT.forEach(r=>{ if(!r.gerceklesme&&r.kayit_tarih){ r.gerceklesme=1; r._bayraksiz=1; } });
     EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
     POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
     buildFilters(); renderDash(); renderPol(); renderEgt(); updateChgCount();
@@ -1872,7 +1880,31 @@ function renderDash(){
   document.getElementById('dKisi').textContent=kisi.size.toLocaleString('tr');
   document.getElementById('dAlmayan').textContent=almayanlar.length.toLocaleString('tr');
   document.getElementById('dGelisim').textContent=ciftNot.length?((gelisim>=0?'+':'')+gelisim.toFixed(1)):'—';
-  document.getElementById('dashInfo').textContent=`${persMap.size} personel · ${e.length} eğitim kaydı (${ger.length} gerçekleşen)`;
+  const bekleyen=e.length-ger.length;
+  document.getElementById('dashInfo').textContent=
+    `${persMap.size} personel · ${e.length} eğitim kaydı (${ger.length} alındı, ${bekleyen} planlı)`;
+
+  // --- Veri uyarilari: sessiz kalinirsa yanlis okunur ---
+  const uy=[];
+  if(_EGT_BAYRAKSIZ)
+    uy.push(`${_EGT_BAYRAKSIZ} kayıtta LeanSys'te "Gerçekleşme" kutucuğu işaretli değil ama eğitim kaydı var — alındı sayıldı.`);
+  // Yil bitmediyse ileri tarihli plan OLMALI; yoksa cekim gun bazinda
+  // kesilmis demektir (Kasim'daki planlar hic gelmemisti).
+  const bugun=new Date().toISOString().slice(0,10);
+  if(yil&&yil===bugun.slice(0,4)&&e.length&&!e.some(r=>(r.plan_tarih||'')>bugun))
+    uy.push(`${yil} yılı bitmedi ama ileri tarihli tek bir plan yok — LeanSys'ten güncellemeyi <b>tarih aralığını boş bırakarak</b> tekrarla.`);
+  // Gerceklesme tarihi GELECEKTE olan kayit: henuz olmamis bir egitim
+  // "gerceklesti" sayilamaz; aylik grafigi de bozuyor.
+  const ileri=ger.filter(r=>(r.kayit_tarih||'')>bugun);
+  if(ileri.length){
+    const ilk=ileri[0];
+    uy.push(`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli (ör. ${esc(ilk.konu||'')} · ${ilk.kayit_tarih}) — LeanSys'te düzeltilmeli, aylık grafikte yanlış aya düşüyor.`);
+  }
+  const uyEl=document.getElementById('dashUyari');
+  if(uyEl) uyEl.innerHTML = uy.length
+    ? `<div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.9em;line-height:1.7;color:#7c2d12">`
+      + uy.map(t=>'⚠️ '+t).join('<br>') + '</div>'
+    : '';
 
   // --- Aylık: planlanan (plan_tarih) vs gerçekleşen (kayit_tarih) ---
   const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
