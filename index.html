@@ -118,6 +118,10 @@
       <select id="dashLok" onchange="renderDash()"><option value="">Tüm Lokasyonlar</option></select>
       <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
       <span class="muted" id="dashInfo"></span>
+      <!-- Uyarilar normalde gizli; sayisi burada, ayrinti tiklayinca -->
+      <button id="uyariToggle" onclick="_uyariPanelAc()" style="display:none;background:#f59e0b;
+              color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:.85em;
+              font-weight:600;cursor:pointer;margin-left:auto;"></button>
     </div>
     <div id="dashUyari"></div>
     <div class="stats">
@@ -1830,6 +1834,22 @@ function renderKonuMakine(makine,det){
 // ===================== DASHBOARD =====================
 function num(v){const n=+v;return isNaN(n)?0:n;}
 function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+// Uyari paneli: normalde gizli. Durum oturum boyunca korunur ki filtre
+// degistirince kullanicinin actigi panel kendiliginden kapanmasin.
+let _uyariAcik=false;
+function _uyariPanelAc(){
+  _uyariAcik=!_uyariAcik;
+  _uyariPaneliCiz();
+}
+function _uyariPaneliCiz(){
+  const p=document.getElementById('dashUyari'), b=document.getElementById('uyariToggle');
+  if(!p||!b)return;
+  const varMi=!!p.dataset.sayi&&+p.dataset.sayi>0;
+  b.style.display=varMi?'inline-block':'none';
+  b.textContent=`⚠️ ${p.dataset.sayi} uyarı ${_uyariAcik?'▴':'▾'}`;
+  p.style.display=(varMi&&_uyariAcik)?'block':'none';
+}
+
 // Uyari ayrinti listesi: normalde kapali, istenince acilir.
 function _uyariAc(i){
   const d=document.getElementById('uyDet'+i), b=document.getElementById('uyBtn'+i);
@@ -1918,6 +1938,7 @@ function renderDash(){
     satir:ileri.map(r=>`${satirOzet(r)} · <b style="color:#b91c1c">kayıt ${r.kayit_tarih}</b>`)});
 
   const uyEl=document.getElementById('dashUyari');
+  if(uyEl) uyEl.dataset.sayi = uy.length;
   if(uyEl) uyEl.innerHTML = uy.length
     ? `<div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;margin-bottom:14px;font-size:.9em;color:#7c2d12">`
       + uy.map((u,i)=>`<div style="padding:8px 14px;${i?'border-top:1px solid #fed7aa;':''}">
@@ -1935,6 +1956,8 @@ function renderDash(){
     : '';
 
   // --- Aylık: planlanan (plan_tarih) vs gerçekleşen (kayit_tarih) ---
+  _uyariPaneliCiz();
+
   // Gerceklesme tarihi ILERI ise plan ayina yaz: henuz olmamis bir egitim
   // Kasim'da "gerceklesmis" gorunemez (LeanSys'te yanlis girilmis tarih).
   // Toplam degismez, yalnizca hangi aya dustugu duzelir; uyarida yazar.
