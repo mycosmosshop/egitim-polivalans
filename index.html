@@ -1505,6 +1505,73 @@ function _persDDPick(name){
   const dd=document.getElementById('persDD'); if(dd)dd.style.display='none';
   renderPersonelKart();
 }
+// ── Yetkinlik ↔ eğitim eşleştirme ───────────────────────────────────
+// İki METİN kuralı (tahmin yok):
+//   A) eğitim konusu makine KODUNU içeriyor  -> "…(910.5.117) Kullanım ve Bakım"
+//   B) makine ADI konu içinde (>=6 harf)     -> "KOMPARATÖR isbasi egitimi"
+// Ölçüm: 2629 polivalans satırının 217'sinde (%8) eşleşme var. Eşleşme
+// yoksa hücre BOŞ kalır; uydurma eşleşme yazılmaz.
+function _egtNrm(s){
+  return String(s||'').toLocaleUpperCase('tr').replace(/[İIı]/g,'I').replace(/[^A-Z0-9]+/g,' ').trim();
+}
+function _egtEslesenler(r, egitimler){
+  const kod=String(r.makine_kodu||'').trim();
+  const na=_egtNrm(r.makine_adi);
+  return egitimler.filter(e=>{
+    if(!e.konu) return false;
+    if(!(e.gerceklesme||e.kayit_tarih)) return false;      // yalnizca ALINAN egitim
+    if(kod && String(e.konu).includes(kod)) return true;   // A
+    return na.length>=6 && _egtNrm(e.konu).includes(na);   // B
+  }).sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
+}
+// Elle secilen eslesmeler: egt_ayar/pol_egitim_eslesme (guid|kod -> uid)
+function _egtElleOku(){
+  try{ return JSON.parse(AYAR.pol_egitim_eslesme||'{}'); }catch(e){ return {}; }
+}
+async function _egtElleYaz(harita){
+  AYAR.pol_egitim_eslesme=JSON.stringify(harita);
+  await _batchUpsert('egt_ayar',[{anahtar:'pol_egitim_eslesme',deger:AYAR.pol_egitim_eslesme}],'anahtar');
+}
+// Satir icin gosterilecek egitim: ELLE secim otomatigi EZER.
+function _egtSatirIcin(r, egitimler){
+  const key=(r.personel_guid||'')+'|'+(r.makine_kodu||'');
+  const elle=_egtElleOku()[key];
+  if(elle){
+    const e=EGT_BY_UID.get(elle);
+    if(e) return {egitim:e, elle:true, adaylar:_egtEslesenler(r,egitimler)};
+  }
+  const m=_egtEslesenler(r,egitimler);
+  return {egitim:m[0]||null, elle:false, adaylar:m};
+}
+
+let _egtSecAd='', _egtSecKey='', _egtSecList=[];
+function egitimEsleAc(key, ad){
+  _egtSecKey=key; _egtSecAd=ad;
+  const g=key.split('|')[0];
+  _egtSecList=EGT.filter(e=>e.konu&&(e.gerceklesme||e.kayit_tarih)&&
+      ((g&&e.personel_guid===g)||e.personel===ad))
+    .sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
+  const secili=_egtElleOku()[key]||'';
+  document.getElementById('egtEsleBaslik').textContent='🎓 İlgili eğitimi seç — '+ad;
+  document.getElementById('egtEsleGovde').innerHTML=
+    `<div class="muted" style="margin-bottom:8px;font-size:.9em">Yalnızca bu kişinin <b>aldığı</b> eğitimler listelenir.</div>
+     <select id="egtEsleSec" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;">
+       <option value="">— eşleşme yok (boş bırak) —</option>
+       ${_egtSecList.map(e=>`<option value="${escAttr(e.uid)}"${e.uid===secili?' selected':''}>${esc(e.konu)}${e.kayit_tarih?' · '+esc(e.kayit_tarih):''}</option>`).join('')}
+     </select>`;
+  document.getElementById('egtEsleModal').classList.add('show');   // modal acma bicimi: .show
+}
+function egitimEsleKapat(){ document.getElementById('egtEsleModal').classList.remove('show'); }
+async function egitimEsleKaydet(){
+  const v=document.getElementById('egtEsleSec').value;
+  const h=_egtElleOku();
+  if(v) h[_egtSecKey]=v; else delete h[_egtSecKey];
+  egitimEsleKapat();
+  renderPersonelKart();
+  try{ await _egtElleYaz(h); toast(v?'✅ Eğitim eşleştirildi':'🗑 Eşleşme kaldırıldı','#1e7e4a',2000); }
+  catch(e){ toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000); }
+}
+
 function renderPersonelKart(){
   const ad=document.getElementById('persSec').value.trim();
   const yf=document.getElementById('persYilF').value;
@@ -1527,9 +1594,20 @@ function renderPersonelKart(){
   const polSorted=[...pol].sort((a,b)=>(+b.yetenek||0)-(+a.yetenek||0)||String(a.makine_adi).localeCompare(String(b.makine_adi),'tr'));
   const yetRows=polSorted.map(r=>{
     const key=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const h=HEDEF.get(key)||''; const m=+r.yetenek||0; const gap=h?h-m:0;
+    // İlgili eğitim: eşleşme yoksa BOŞ (uydurma yazılmaz)
+    const es=_egtSatirIcin(r,egt);
+    const esHtml=es.egitim
+      ? `<span title="${escAttr((es.egitim.kayit_tarih||es.egitim.plan_tarih||'')+(es.elle?' · elle seçildi':' · otomatik eşleşme'))}">`
+        + `${es.elle?'<b style="color:#0891b2">✎</b> ':''}${esc(es.egitim.konu)}`
+        + `${es.egitim.kayit_tarih?`<span class="muted" style="font-size:.85em"> · ${esc(es.egitim.kayit_tarih)}</span>`:''}</span>`
+      : '<span class="muted">—</span>';
     return `<tr><td>${esc(r.makine_adi)}</td><td class="muted">${esc(r.makinegrup_adi||'')}</td>
       <td><span class="yet yet${m}">${m}</span></td><td>${h?`<b>${h}</b>`:'<span class="muted">—</span>'}</td>
       <td>${!h?'':gap<=0?'<span class="badge b-ok">✓</span>':`<span class="badge b-no">⚠ ${gap}</span>`}</td>
+      <td style="font-size:.9em">${esHtml}
+        <button onclick="egitimEsleAc('${escAttr(key)}','${escAttr(ad)}')"
+          style="background:none;border:1px solid #cbd5e1;border-radius:4px;cursor:pointer;color:#475569;font-size:.75em;padding:1px 5px;margin-left:4px;line-height:1.4;"
+          title="İlgili eğitimi elle seç">✎</button></td>
       <td><button onclick="silYetkinlik('${escAttr(r.uid||'')}','${escAttr(r.makine_adi||'')}','${escAttr(ad)}','${escAttr(guid||'')}')" style="background:none;border:1px solid #fca5a5;border-radius:4px;cursor:pointer;color:#dc2626;font-size:.75em;padding:1px 5px;line-height:1.4;" title="Yetkinlikten çıkar">✕</button></td></tr>`;
   }).join('');
   const egtSorted=[...egt].sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
@@ -1551,7 +1629,7 @@ function renderPersonelKart(){
     <div class="grid2">
       <div class="chart-card" style="overflow:hidden;">
         <h3>🧩 Yetkinlikler <span class="muted" style="font-weight:400;">(${pol.length}) · Sv1:${yetC[0]} Sv2:${yetC[1]} Sv3:${yetC[2]} Sv4:${yetC[3]}</span></h3>
-        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th><th style="width:28px;"></th></tr></thead><tbody>${yetRows||'<tr><td colspan="6" class="muted">Polivalans yetkinlik kaydı yok</td></tr>'}</tbody></table></div>
+        <div class="table-wrap" style="max-height:300px;"><table><thead><tr><th>Makine/Konu</th><th>Grup</th><th>Mevcut</th><th>Hedef</th><th>Durum</th><th>İlgili Eğitim</th><th style="width:28px;"></th></tr></thead><tbody>${yetRows||'<tr><td colspan="7" class="muted">Polivalans yetkinlik kaydı yok</td></tr>'}</tbody></table></div>
         ${alınmamisPolHtml}
       </div>
       <div class="chart-card" style="overflow:hidden;">
@@ -3403,6 +3481,19 @@ document.addEventListener('click',e=>{
 applyAdmin();
 loadAll(true);
 </script>
+<div class="modal-bg" id="egtEsleModal">
+  <div class="modal" style="max-width:620px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);">
+      <h3 id="egtEsleBaslik">🎓 İlgili eğitimi seç</h3>
+      <button class="modal-x" onclick="egitimEsleKapat()">✕</button></div>
+    <div class="modal-body" id="egtEsleGovde"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="egitimEsleKapat()">Vazgeç</button>
+      <button class="btn primary" onclick="egitimEsleKaydet()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <!-- Datalistler body seviyesinde — modal overflow:auto bunu kesmez -->
 <datalist id="teDPersList"></datalist>
 <datalist id="mEgtKonuList"></datalist>
