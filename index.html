@@ -114,8 +114,8 @@
   <div id="view-dash">
     <div class="filters card" style="margin-bottom:16px;">
       <b style="color:#334155;">Filtre:</b>
-      <select id="dashYil" onchange="renderDash()"><option value="">Tüm Yıllar</option></select>
-      <select id="dashLok" onchange="renderDash()"><option value="">Tüm Lokasyonlar</option></select>
+      <select id="dashYil" onchange="_filtreDegisti('dashLok','dashYil')"><option value="">Tüm Yıllar</option></select>
+      <select id="dashLok" onchange="_filtreDegisti('dashLok','dashYil')"><option value="">Tüm Lokasyonlar</option></select>
       <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpi()">🎯 KPI Hedefleri</button>
       <span class="muted" id="dashInfo"></span>
       <!-- Uyarilar normalde gizli; sayisi burada, ayrinti tiklayinca -->
@@ -180,7 +180,7 @@
   <div id="view-poldash" class="hidden">
     <div class="filters card" style="margin-bottom:16px;">
       <b style="color:#334155;">Filtre:</b>
-      <select id="pdLok" onchange="renderPolDash()"><option value="">Tüm Lokasyonlar</option></select>
+      <select id="pdLok" onchange="_filtreDegisti('pdLok',null)"><option value="">Tüm Lokasyonlar</option></select>
       <select id="pdDept" onchange="renderPolDash()"><option value="">Tüm Departmanlar</option></select>
       <button class="btn admin-only" style="background:#0891b2;color:#fff;" onclick="openKpiPol()">🎯 KPI Hedefleri</button>
       <span class="muted" id="pdInfo"></span>
@@ -233,7 +233,7 @@
     <div class="card">
       <div class="filters">
         <input type="text" id="polSearch" placeholder="🔍 Personel / makine / proses ara..." oninput="renderPol()">
-        <select id="polLok" onchange="renderPol()"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="polLok" onchange="_filtreDegisti('polLok',null)"><option value="">Tüm Lokasyonlar</option></select>
         <select id="polDept" onchange="renderPol()"><option value="">Tüm Departmanlar</option></select>
         <select id="polYet" onchange="renderPol()">
           <option value="">Tüm Yetenekler</option>
@@ -319,8 +319,8 @@
     <div class="card">
       <div class="filters">
         <input type="text" id="egtSearch" placeholder="🔍 Personel / konu / eğitici ara..." oninput="renderEgt()">
-        <select id="egtLok" onchange="renderEgt()"><option value="">Tüm Lokasyonlar</option></select>
-        <select id="egtYil" onchange="renderEgt()"><option value="">Tüm Yıllar</option></select>
+        <select id="egtLok" onchange="_filtreDegisti('egtLok','egtYil')"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="egtYil" onchange="_filtreDegisti('egtLok','egtYil')"><option value="">Tüm Yıllar</option></select>
         <select id="egtDurum" onchange="renderEgt()">
           <option value="">Tümü</option><option value="1">Gerçekleşen</option><option value="0">Gerçekleşmeyen</option>
           <option value="plan">🎓 Planlanan (app)</option>
@@ -390,8 +390,8 @@
           <div id="persDD" style="display:none;position:absolute;top:100%;left:0;min-width:260px;z-index:60;background:#fff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.12);max-height:340px;overflow-y:auto;margin-top:3px;"></div>
         </div>
         <datalist id="persDatalist"></datalist>
-        <select id="persLokF" onchange="buildPersDatalist();renderPersonelKart()"><option value="">Tüm Lokasyonlar</option></select>
-        <select id="persYilF" onchange="renderPersonelKart()"><option value="">Tüm Yıllar (eğitim)</option></select>
+        <select id="persLokF" onchange="_filtreDegisti('persLokF','persYilF')"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="persYilF" onchange="_filtreDegisti('persLokF','persYilF')"><option value="">Tüm Yıllar (eğitim)</option></select>
         <span class="muted" id="persInfo"></span>
       </div>
     </div>
@@ -411,8 +411,8 @@
           <button id="konuSecTemizle" onclick="document.getElementById('konuSec').value='';this.style.display='none';renderKonuKart()" style="display:none;position:absolute;right:4px;background:none;border:none;cursor:pointer;color:#94a3b8;font-size:1em;line-height:1;padding:0;" title="Temizle">✕</button>
         </span>
         <datalist id="konuDatalist"></datalist>
-        <select id="konuLokF" onchange="renderKonuKart()"><option value="">Tüm Lokasyonlar</option></select>
-        <select id="konuYilF" onchange="renderKonuKart()"><option value="">Tüm Yıllar</option></select>
+        <select id="konuLokF" onchange="_filtreDegisti('konuLokF','konuYilF')"><option value="">Tüm Lokasyonlar</option></select>
+        <select id="konuYilF" onchange="_filtreDegisti('konuLokF','konuYilF')"><option value="">Tüm Yıllar</option></select>
         <select id="konuDurum" onchange="renderKonuKart()">
           <option value="">Tüm Durum</option>
           <option value="1">✅ Gerçekleşen</option>
@@ -1461,14 +1461,59 @@ async function silManuelEgt(uid){
   catch(e){toast('❌ Silinemedi: '+e.message,'#dc2626',4000);}
 }
 
+let _aktifSekme='dash';
 function showTab(t){
+  _aktifSekme=t;
   ['dash','poldash','pol','egt','personel','konu'].forEach(x=>{
     document.getElementById('view-'+x).classList.toggle('hidden',x!==t);
     document.getElementById('tab-'+x).classList.toggle('active',x===t);
   });
-  if(t==='poldash')renderPolDash();
-  if(t==='personel')buildPersDatalist();
-  if(t==='konu')konuModChange();
+  _sekmeCiz(t);
+}
+// Acilan gorunum HER ZAMAN cizilir: filtre baska sekmede degistiginde
+// yalnizca acik sekme cizildigi icin, buraya gelince guncel olsun.
+function _sekmeCiz(t){
+  if(t==='dash')renderDash();
+  else if(t==='poldash')renderPolDash();
+  else if(t==='pol')renderPol();
+  else if(t==='egt')renderEgt();
+  else if(t==='personel'){buildPersDatalist();renderPersonelKart();}
+  else if(t==='konu')konuModChange();
+}
+
+// Lokasyon/yil secimi butun sekmelere yayilir: kullanici Egitim
+// Panelinde 2026/ANKARA sectiyse Polivalans, Personel, Konu sekmeleri
+// de ayni kapsamla acilsin.
+const _LOK_SEC=['dashLok','pdLok','polLok','egtLok','persLokF','konuLokF'];
+const _YIL_SEC=['dashYil','egtYil','persYilF','konuYilF'];
+let _filtreKilit=false;
+function _filtreYay(lok,yil){
+  if(_filtreKilit)return;
+  _filtreKilit=true;
+  try{
+    const uygula=(idler,deger)=>{
+      if(deger===undefined||deger===null)return;
+      idler.forEach(id=>{
+        const el=document.getElementById(id); if(!el)return;
+        // Hedef sekmede bu secenek YOKSA dokunma: orada o lokasyon/yil
+        // hic gecmiyor demektir, zorlamak listeyi bosaltirdi.
+        if([...el.options].some(o=>o.value===deger)) el.value=deger;
+      });
+    };
+    uygula(_LOK_SEC,lok);
+    uygula(_YIL_SEC,yil);
+    // Personel secicisinin kaynagi lokasyona bagli
+    try{ buildPersDatalist(); }catch(e){}
+    // Cizim de kilit ICINDE: bir cizim filtreye dokunursa
+    // (or. bos listede lokasyonu sifirlarsa) dongu olusmasin.
+    _sekmeCiz(_aktifSekme);
+  } finally { _filtreKilit=false; }
+}
+// Bir sekmenin lokasyon/yil kutusu degisince cagrilir
+function _filtreDegisti(lokId,yilId){
+  const l=lokId?(document.getElementById(lokId)||{}).value:undefined;
+  const y=yilId?(document.getElementById(yilId)||{}).value:undefined;
+  _filtreYay(l,y);
 }
 
 // ===================== PERSONEL KARTI =====================
@@ -1598,7 +1643,19 @@ function renderPersonelKart(){
   const ad=document.getElementById('persSec').value.trim();
   const yf=document.getElementById('persYilF').value;
   const det=document.getElementById('persDetay');
-  if(!ad){det.innerHTML='<div class="card muted">Yetkinlik ve eğitim geçmişini görmek için bir personel seçin.</div>';document.getElementById('persInfo').textContent='';return;}
+  if(!ad){
+    // Sekme bombos aciliyordu: ne yapilacagi ve hangi kapsamda oldugu yazsin
+    const lf=(document.getElementById('persLokF')||{}).value||'';
+    const yf=(document.getElementById('persYilF')||{}).value||'';
+    det.innerHTML=`<div class="card" style="text-align:center;padding:28px 20px;color:#475569;">
+      <div style="font-size:2em;line-height:1;margin-bottom:8px;">👤</div>
+      <div style="font-weight:600;font-size:1.05em;margin-bottom:4px;">Detayı görmek için bir personel seçin</div>
+      <div class="muted" style="font-size:.9em;">Yukarıdaki kutuya ad yazın ya da listeden seçin —
+        yetkinlikler, eğitim geçmişi ve alınmamış eğitimler burada görünür.</div>
+      <div class="muted" style="font-size:.85em;margin-top:8px;">
+        Kapsam: <b>${esc(lf||'tüm lokasyonlar')}</b> · <b>${esc(yf||'tüm yıllar')}</b></div>
+    </div>`;
+    document.getElementById('persInfo').textContent='';return;}
   const pol=POL.filter(r=>r.personel===ad);
   // Polivalans kaydı olmasa bile: eğitim katılımcısı veya aktif personel (PER001 roster) olabilir
   const egtByName=EGT.filter(r=>r.personel===ad);
