@@ -837,6 +837,7 @@ const ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI
 let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4)
 let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
 let _EGT_BAYRAKSIZ=0;                   // egitim kaydi var ama plan kutucugu isaretsiz
+let _POL_IKIZ=[];                       // LeanSys'te iki personel kaydi olan kisiler
 let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
 let _modalUid=null;
 let PDEGER=new Map();                   // PDEGER: "guid|makine_kodu" -> {checklist,hesaplanan_seviye,deger_tarihi,...}
@@ -906,13 +907,31 @@ async function loadAll(notify){
     }catch(e){AKTIF_GUIDS=null;}
     // Aktif personel isimli roster (polivalans/eğitim kaydı olmayan çalışanlar da Personel sekmesinde görünsün)
     try{const pr=AYAR['aktif_personel_data'];PER_ROSTER=pr?JSON.parse(pr):[];}catch(e){PER_ROSTER=[];}
-    // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut (LeanSys tekrarlarını ele)
-    const _pm=new Map();
+    // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut.
+    // Anahtar GUID+makine idi; LeanSys'te aynı kişi için İKİ personel kaydı
+    // açılabildiği icin (ölçüm: 10 isim, 68 makine-kişi çifti) aynı insan
+    // listede iki kez çıkıyordu. Anahtar artık İSİM+makine.
+    // Kazanan: önce AKTİF personel kaydı, sonra en güncel tarih, sonra inckey.
+    const _pm=new Map(); const _elenen=[];
+    const _polKisi=r=>String(r.personel||'').trim().toLocaleUpperCase('tr').replace(/\s+/g,' ')
+                       || ('#'+normG(r.personel_guid));
+    const _polMak=r=>(r.makine_kodu||'')||('@'+(r.makine_adi||''));
+    const _polK=r=>_polKisi(r)+'|'+_polMak(r);
+    const _polSkor=r=>[(AKTIF_GUIDS&&AKTIF_GUIDS.has(normG(r.personel_guid)))?1:0,
+                       String(r.tarih||''), +r.pol_inckey||0];
+    const _polUstun=(a,b)=>{const x=_polSkor(a),y=_polSkor(b);
+      return x[0]!==y[0]?x[0]>y[0]:(x[1]!==y[1]?x[1]>y[1]:x[2]>y[2]);};
     POL.forEach(r=>{
-      const k=(r.personel_guid||'')+'|'+(r.makine_kodu||''); const e=_pm.get(k);
-      if(!e||String(r.tarih||'')>String(e.tarih||'')||(String(r.tarih||'')===String(e.tarih||'')&&(+r.pol_inckey||0)>(+e.pol_inckey||0))) _pm.set(k,r);
+      const k=_polK(r), e=_pm.get(k);
+      if(!e){_pm.set(k,r);return;}
+      if(_polUstun(r,e)){_pm.set(k,r);_elenen.push([r,e]);} else _elenen.push([e,r]);
     });
     POL=[..._pm.values()];
+    // Yalnizca GUID'i FARKLI olanlar "ayri personel kaydi" demektir; ayni
+    // GUID'in eski satiri zaten normal tekrar.
+    _POL_IKIZ=_elenen.filter(([k,y])=>normG(k.personel_guid)!==normG(y.personel_guid))
+      .map(([k,y])=>({ad:k.personel,lokasyon:k.lokasyon,makine:k.makine_adi||k.makine_kodu,
+                      kalan:normG(k.personel_guid),elenen:normG(y.personel_guid)}));
     HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
     DEGER=new Map(degerRows.map(r=>[r.uid,r]));
     PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
@@ -925,6 +944,17 @@ async function loadAll(notify){
     EGT.forEach(r=>{ if(!r.gerceklesme&&r.kayit_tarih){ r.gerceklesme=1; r._bayraksiz=1; } });
     EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
     POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
+    // Elenen kaydin GUID'ine bagli hedef/degerlendirmeler kaybolmasin
+    // (olcum: 68 polivalans degerlendirmesi). Kazananin anahtarina TASI,
+    // yalnizca kazananda YOKSA — kullanicinin guncel girdisi ezilmez.
+    // Supabase'e hicbir sey yazilmaz; yalnizca ekranda gorunur.
+    _elenen.forEach(([kaz,kay])=>{
+      const ka=(kaz.personel_guid||'')+'|'+(kaz.makine_kodu||'');
+      const ky=(kay.personel_guid||'')+'|'+(kay.makine_kodu||'');
+      if(ka===ky)return;
+      if(!HEDEF.has(ka)&&HEDEF.has(ky))HEDEF.set(ka,HEDEF.get(ky));
+      if(!PDEGER.has(ka)&&PDEGER.has(ky))PDEGER.set(ka,PDEGER.get(ky));
+    });
     buildFilters(); renderDash(); renderPol(); renderEgt(); updateChgCount();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
   }catch(e){
@@ -1933,6 +1963,13 @@ function renderDash(){
 
   // Gerceklesme tarihi GELECEKTE olan kayit: henuz olmamis bir egitim
   // "gerceklesti" sayilamaz. Aylik grafikte PLAN ayina yaziliyor (asagida).
+  // LeanSys'te ayni kisi icin iki personel kaydi: polivalansta tek kisi
+  // sayildi. Ayni adli IKI FARKLI kisi olma ihtimali icin listeleniyor.
+  const ikiz=_POL_IKIZ.filter(x=>!lok||x.lokasyon===lok);
+  if(ikiz.length) uy.push({
+    baslik:`${ikiz.length} polivalans satırında aynı kişi LeanSys'te iki ayrı personel kaydı taşıyor — <b>tek kişi</b> sayıldı.`,
+    satir:ikiz.map(x=>`${esc(x.ad||'')} · ${esc(x.makine||'')} · ${esc(x.lokasyon||'')}`)});
+
   if(ileri.length) uy.push({
     baslik:`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli — aylık grafikte <b>plan ayına</b> yazıldı, LeanSys'te düzeltilmeli.`,
     satir:ileri.map(r=>`${satirOzet(r)} · <b style="color:#b91c1c">kayıt ${r.kayit_tarih}</b>`)});
