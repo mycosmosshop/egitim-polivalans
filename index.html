@@ -1830,6 +1830,15 @@ function renderKonuMakine(makine,det){
 // ===================== DASHBOARD =====================
 function num(v){const n=+v;return isNaN(n)?0:n;}
 function topN(map,n){return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,n);}
+// Uyari ayrinti listesi: normalde kapali, istenince acilir.
+function _uyariAc(i){
+  const d=document.getElementById('uyDet'+i), b=document.getElementById('uyBtn'+i);
+  if(!d)return;
+  const acik=d.style.display!=='none';
+  d.style.display=acik?'none':'block';
+  if(b)b.textContent=b.textContent.replace(acik?'▴':'▾',acik?'▾':'▴');
+}
+
 function renderDash(){
   const yil=document.getElementById('dashYil').value;
   const lok=document.getElementById('dashLok').value;
@@ -1885,31 +1894,54 @@ function renderDash(){
     `${persMap.size} personel · ${e.length} eğitim kaydı (${ger.length} alındı, ${bekleyen} planlı)`;
 
   // --- Veri uyarilari: sessiz kalinirsa yanlis okunur ---
-  const uy=[];
-  if(_EGT_BAYRAKSIZ)
-    uy.push(`${_EGT_BAYRAKSIZ} kayıtta LeanSys'te "Gerçekleşme" kutucuğu işaretli değil ama eğitim kaydı var — alındı sayıldı.`);
-  // Yil bitmediyse ileri tarihli plan OLMALI; yoksa cekim gun bazinda
-  // kesilmis demektir (Kasim'daki planlar hic gelmemisti).
+  // Sayaclar SECILI filtreye gore (e/ger zaten yil+lokasyon suzulmus);
+  // "Ankara 2026" ekraninda tum yillarin sayisini yazmak yaniltiyordu.
   const bugun=new Date().toISOString().slice(0,10);
-  if(yil&&yil===bugun.slice(0,4)&&e.length&&!e.some(r=>(r.plan_tarih||'')>bugun))
-    uy.push(`${yil} yılı bitmedi ama ileri tarihli tek bir plan yok — LeanSys'ten güncellemeyi <b>tarih aralığını boş bırakarak</b> tekrarla.`);
-  // Gerceklesme tarihi GELECEKTE olan kayit: henuz olmamis bir egitim
-  // "gerceklesti" sayilamaz; aylik grafigi de bozuyor.
+  const bayraksiz=e.filter(r=>r._bayraksiz);
   const ileri=ger.filter(r=>(r.kayit_tarih||'')>bugun);
-  if(ileri.length){
-    const ilk=ileri[0];
-    uy.push(`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli (ör. ${esc(ilk.konu||'')} · ${ilk.kayit_tarih}) — LeanSys'te düzeltilmeli, aylık grafikte yanlış aya düşüyor.`);
-  }
+  const uy=[];
+  const satirOzet=r=>`${esc(r.konu||'')} · ${esc(r.personel||'—')} · plan ${r.plan_tarih||'—'}`;
+
+  if(bayraksiz.length) uy.push({
+    baslik:`${bayraksiz.length} kayıtta LeanSys'te "Gerçekleşme" kutucuğu işaretli değil ama eğitim kaydı var — alındı sayıldı.`,
+    satir:bayraksiz.map(r=>`${satirOzet(r)} · kayıt ${r.kayit_tarih||'—'}`)});
+
+  // Yil bitmediyse ileri tarihli plan OLMALI; yoksa cekim kesik demektir.
+  if(yil&&yil===bugun.slice(0,4)&&e.length&&!e.some(r=>(r.plan_tarih||'')>bugun)) uy.push({
+    baslik:`${yil} yılı bitmedi ama ileri tarihli tek bir plan yok — LeanSys'ten güncellemeyi <b>tarih aralığını boş bırakarak</b> tekrarla.`,
+    satir:[]});
+
+  // Gerceklesme tarihi GELECEKTE olan kayit: henuz olmamis bir egitim
+  // "gerceklesti" sayilamaz. Aylik grafikte PLAN ayina yaziliyor (asagida).
+  if(ileri.length) uy.push({
+    baslik:`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli — aylık grafikte <b>plan ayına</b> yazıldı, LeanSys'te düzeltilmeli.`,
+    satir:ileri.map(r=>`${satirOzet(r)} · <b style="color:#b91c1c">kayıt ${r.kayit_tarih}</b>`)});
+
   const uyEl=document.getElementById('dashUyari');
   if(uyEl) uyEl.innerHTML = uy.length
-    ? `<div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:.9em;line-height:1.7;color:#7c2d12">`
-      + uy.map(t=>'⚠️ '+t).join('<br>') + '</div>'
+    ? `<div style="background:#fff7ed;border-left:4px solid #f59e0b;border-radius:8px;margin-bottom:14px;font-size:.9em;color:#7c2d12">`
+      + uy.map((u,i)=>`<div style="padding:8px 14px;${i?'border-top:1px solid #fed7aa;':''}">
+            <div style="display:flex;gap:8px;align-items:flex-start;line-height:1.6">
+              <span>⚠️</span><span style="flex:1">${u.baslik}</span>
+              ${u.satir.length?`<button onclick="_uyariAc(${i})" id="uyBtn${i}"
+                 style="flex:none;background:#f59e0b;color:#fff;border:none;border-radius:5px;
+                        padding:2px 10px;font-size:.85em;cursor:pointer">${u.satir.length} kayıt ▾</button>`:''}
+            </div>
+            ${u.satir.length?`<div id="uyDet${i}" style="display:none;margin-top:8px;max-height:34vh;overflow:auto;
+                 background:#fff;border:1px solid #fed7aa;border-radius:6px;padding:8px 10px;line-height:1.8;font-size:.94em">
+                 ${u.satir.map(t=>'• '+t).join('<br>')}</div>`:''}
+         </div>`).join('')
+      + '</div>'
     : '';
 
   // --- Aylık: planlanan (plan_tarih) vs gerçekleşen (kayit_tarih) ---
+  // Gerceklesme tarihi ILERI ise plan ayina yaz: henuz olmamis bir egitim
+  // Kasim'da "gerceklesmis" gorunemez (LeanSys'te yanlis girilmis tarih).
+  // Toplam degismez, yalnizca hangi aya dustugu duzelir; uyarida yazar.
+  const gerAy=r=>{ const d=r.kayit_tarih||r.plan_tarih; return (d&&d>bugun)?(r.plan_tarih||d):d; };
   const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
-  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
+  ger.forEach(r=>{const d=gerAy(r);if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
   const hAy=parseFloat(kpiGet('kpi_ay_saat',lok,yil))||0;
   const aylikDs=[
     {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
@@ -1921,7 +1953,7 @@ function renderDash(){
   const ayPlanAdet=Array(12).fill(0), ayGerAdet=Array(12).fill(0);
   const planSess=new Set(), gerSess=new Set();
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!planSess.has(k)){planSess.add(k);ayPlanAdet[m]++;}}}});
-  ger.forEach(r=>{const d=r.kayit_tarih||r.plan_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!gerSess.has(k)){gerSess.add(k);ayGerAdet[m]++;}}}});
+  ger.forEach(r=>{const d=gerAy(r);if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!gerSess.has(k)){gerSess.add(k);ayGerAdet[m]++;}}}});
   drawGrouped('chAylikAdet',AYLAR,[
     {label:'Planlanan',data:ayPlanAdet,color:'#cbd5e1'},
     {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}
