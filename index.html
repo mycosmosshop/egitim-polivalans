@@ -136,7 +136,7 @@
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>📅 Aylık Adam·Saat — Planlanan vs Gerçekleşen</h3><div class="chart-box tall"><canvas id="chAylik"></canvas></div></div>
-      <div class="chart-card"><h3>✅ Gerçekleşme Durumu (katılım)</h3><div class="chart-box tall"><canvas id="chDurum"></canvas></div></div>
+      <div class="chart-card"><h3>✅ Gerçekleşme Durumu (katılım) <span id="durumHedef" class="muted" style="font-weight:400;"></span></h3><div class="chart-box tall"><canvas id="chDurum"></canvas></div></div>
     </div>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="chart-card"><h3>🔢 Aylık Eğitim Adeti — Planlanan vs Gerçekleşen</h3><div class="chart-box tall"><canvas id="chAylikAdet"></canvas></div></div>
@@ -2116,6 +2116,16 @@ function renderDash(){
     baslik:`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli — aylık grafikte <b>plan ayına</b> yazıldı, LeanSys'te düzeltilmeli.`,
     satir:ileri.map(r=>`${satirOzet(r)} · <b style="color:#b91c1c">kayıt ${r.kayit_tarih}</b>`)});
 
+  // Oran hedefi donut basliginda da yazsin: donuta cizgi cizilemez.
+  const dhEl=document.getElementById('durumHedef');
+  if(dhEl){
+    const hOK=kpiTam('kpi_oran',lok,yil), hOv=parseFloat(hOK.deger)||0;
+    dhEl.innerHTML = hOv
+      ? `· Hedef %${hOv}${hOK.miras?' (genel)':''} · Gerçekleşen `
+        + `<b style="color:${oran>=hOv?'#16a34a':'#e11d48'}">%${oran.toFixed(0)}</b>`
+      : '· Hedef tanımlı değil';
+  }
+
   const uyEl=document.getElementById('dashUyari');
   if(uyEl) uyEl.dataset.sayi = uy.length;
   if(uyEl) uyEl.innerHTML = uy.length
@@ -2144,11 +2154,11 @@ function renderDash(){
   const ayPlan=Array(12).fill(0), ayGer=Array(12).fill(0);
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayPlan[m]+=num(r.sure);}});
   ger.forEach(r=>{const d=gerAy(r);if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12)ayGer[m]+=num(r.sure);}});
-  const hAy=parseFloat(kpiGet('kpi_ay_saat',lok,yil))||0;
+  const hAyK=kpiTam('kpi_ay_saat',lok,yil); const hAy=parseFloat(hAyK.deger)||0;
   const aylikDs=[
     {label:'Planlanan',data:ayPlan.map(v=>Math.round(v)),color:'#cbd5e1'},
     {label:'Gerçekleşen',data:ayGer.map(v=>Math.round(v)),color:'#1e7e4a'}];
-  if(hAy)aylikDs.push({label:`Hedef (${hAy})`,data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
+  if(hAy)aylikDs.push({label:kpiEtiket('Hedef',hAy,hAyK.miras),data:Array(12).fill(hAy),type:'line',color:'#e11d48'});
   drawGrouped('chAylik',AYLAR,aylikDs);
 
   // --- Aylık eğitim adeti: planlanan vs gerçekleşen (benzersiz oturum sayısı) ---
@@ -2156,10 +2166,17 @@ function renderDash(){
   const planSess=new Set(), gerSess=new Set();
   e.forEach(r=>{const d=r.plan_tarih||r.kayit_tarih;if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!planSess.has(k)){planSess.add(k);ayPlanAdet[m]++;}}}});
   ger.forEach(r=>{const d=gerAy(r);if(d){const m=+String(d).slice(5,7)-1;if(m>=0&&m<12){const k=`${m}|${r.konu||''}|${r.plan_tarih||''}|${r.egitici||''}|${r.lokasyon||''}`;if(!gerSess.has(k)){gerSess.add(k);ayGerAdet[m]++;}}}});
-  drawGrouped('chAylikAdet',AYLAR,[
+  // Gerceklesme orani hedefi (%) hicbir grafikte gorunmuyordu. Aylik
+  // adet grafiginde "planin %X'i" cizgisi olarak cizilir: turetme
+  // aciklanabilir, uydurma veri degil.
+  const hOranK=kpiTam('kpi_oran',lok,yil); const hOranV=parseFloat(hOranK.deger)||0;
+  const adetDs=[
     {label:'Planlanan',data:ayPlanAdet,color:'#cbd5e1'},
-    {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}
-  ]);
+    {label:'Gerçekleşen',data:ayGerAdet,color:'#1e40af'}];
+  if(hOranV) adetDs.push({
+    label:`Hedef · planın %${hOranV}'i${hOranK.miras?' (genel)':''}`,
+    data:ayPlanAdet.map(v=>+(v*hOranV/100).toFixed(2)),type:'line',color:'#e11d48'});
+  drawGrouped('chAylikAdet',AYLAR,adetDs);
 
   // --- Tür bazlı planlanan vs gerçekleşen adet ---
   const turPlanMap={},turGerMap={};
@@ -2233,7 +2250,10 @@ function renderDash(){
   const kisiDs=[{label:'Saat/Kişi',data:kyE.map(x=>x[1].k.size?+(x[1].s/x[1].k.size).toFixed(1):0),color:'#0891b2'}];
   // Hedef çizgisi: her yıl için o yıla (ve seçili lokasyona) özel hedef; yoksa global
   const hKSarr=kyE.map(x=>parseFloat(kpiGet('kpi_kisi_yil_saat',lok,x[0]))||0);
-  if(hKSarr.some(v=>v>0))kisiDs.push({label:'Hedef',data:hKSarr,type:'line',color:'#e11d48'});
+  if(hKSarr.some(v=>v>0)){
+    const hKmiras=kyE.some(x=>kpiTam('kpi_kisi_yil_saat',lok,x[0]).miras);
+    kisiDs.push({label:hKmiras?'Hedef (genel)':'Hedef',data:hKSarr,type:'line',color:'#e11d48'});
+  }
   drawGrouped('chKisiYil',kyE.map(x=>x[0]),kisiDs);
 
   // --- Almayanlar listesi ---
@@ -2989,6 +3009,17 @@ async function silTumDegisiklik(){
 // ===================== KPI HEDEFLERİ =====================
 // Kapsamlı anahtar: "<metrik>|<lokasyon>|<yil>"  (boş = genel). Eski düz anahtar ("kpi_oran") = genel.
 // Dashboard çözümü: tam(lok,yıl) -> lok(her yıl) -> yıl(her lok) -> genel -> eski düz anahtar.
+// Hedef SECILI kapsamda mi tanimli, yoksa daha genis kapsamdan mi
+// miras alindi? "Hedef 2" gibi bir deger nereden geldigi bilinmeden
+// gosterilirse o kapsam icin belirlenmis sanilir.
+function kpiTam(metric,lok,yil){
+  const v=kpiGet(metric,lok,yil);
+  if(v===''||v==null) return {deger:'', miras:false};
+  const tam=AYAR[metric+'|'+(lok||'')+'|'+(yil||'')];
+  return {deger:v, miras:!(tam!=null&&tam!=='')};
+}
+function kpiEtiket(ad,v,miras){ return `${ad} (${v}${miras?' · genel':''})`; }
+
 function kpiGet(metric,lok,yil){
   const cand=[
     metric+'|'+(lok||'')+'|'+(yil||''),
