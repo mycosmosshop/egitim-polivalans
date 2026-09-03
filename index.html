@@ -1553,17 +1553,39 @@ function egitimEsleAc(key, ad){
     .sort((a,b)=>String(b.kayit_tarih||b.plan_tarih||'').localeCompare(String(a.kayit_tarih||a.plan_tarih||'')));
   const secili=_egtElleOku()[key]||'';
   document.getElementById('egtEsleBaslik').textContent='🎓 İlgili eğitimi seç — '+ad;
+  // Kisinin 85 egitimi olabiliyor: aramasiz secim zor. Seviye
+  // egitimleri ekranindaki kalibin AYNISI (arama + kaydirmali liste).
   document.getElementById('egtEsleGovde').innerHTML=
-    `<div class="muted" style="margin-bottom:8px;font-size:.9em">Yalnızca bu kişinin <b>aldığı</b> eğitimler listelenir.</div>
-     <select id="egtEsleSec" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;">
-       <option value="">— eşleşme yok (boş bırak) —</option>
-       ${_egtSecList.map(e=>`<option value="${escAttr(e.uid)}"${e.uid===secili?' selected':''}>${esc(e.konu)}${e.kayit_tarih?' · '+esc(e.kayit_tarih):''}</option>`).join('')}
-     </select>`;
+    `<div class="muted" style="margin-bottom:8px;font-size:.9em">Yalnızca bu kişinin <b>aldığı</b>
+       eğitimler listelenir. <b>${_egtSecList.length}</b> eğitim.</div>
+     <input id="egtEsleAra" placeholder="🔍 Eğitim ara..." oninput="egitimEsleSuz()"
+            style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:8px;">
+     <div id="egtEsleListe" style="max-height:44vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;">
+       <label class="chk-item" data-konu=""
+              style="display:flex;gap:8px;padding:6px 9px;border-bottom:1px solid #f1f5f9;cursor:pointer;background:#f8fafc;">
+         <input type="radio" name="egtEsleSec" value=""${secili?'':' checked'}>
+         <span class="muted">— eşleşme yok (boş bırak) —</span></label>
+       ${_egtSecList.map(e=>`<label class="chk-item" data-konu="${escAttr(_egtNrm(e.konu))}"
+            style="display:flex;gap:8px;padding:6px 9px;border-bottom:1px solid #f1f5f9;cursor:pointer;">
+            <input type="radio" name="egtEsleSec" value="${escAttr(e.uid)}"${e.uid===secili?' checked':''}>
+            <span>${esc(e.konu)}${e.kayit_tarih?`<span class="muted" style="font-size:.9em"> · ${esc(e.kayit_tarih)}</span>`:''}</span>
+          </label>`).join('')}
+       ${_egtSecList.length?'':'<div class="muted" style="padding:10px">Bu kişinin alınmış eğitim kaydı yok.</div>'}
+     </div>`;
   document.getElementById('egtEsleModal').classList.add('show');   // modal acma bicimi: .show
+}
+function egitimEsleSuz(){
+  const q=_egtNrm(document.getElementById('egtEsleAra').value);
+  document.querySelectorAll('#egtEsleListe label').forEach(l=>{
+    // "eslesme yok" satiri her zaman gorunur: secimi temizlemek icin gerekli
+    const bos=!l.dataset.konu;
+    l.style.display=(bos||!q||String(l.dataset.konu).includes(q))?'flex':'none';
+  });
 }
 function egitimEsleKapat(){ document.getElementById('egtEsleModal').classList.remove('show'); }
 async function egitimEsleKaydet(){
-  const v=document.getElementById('egtEsleSec').value;
+  const sec=document.querySelector('#egtEsleListe input[name=egtEsleSec]:checked');
+  const v=sec?sec.value:'';
   const h=_egtElleOku();
   if(v) h[_egtSecKey]=v; else delete h[_egtSecKey];
   egitimEsleKapat();
