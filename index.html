@@ -838,6 +838,7 @@ let POL=[], EGT=[], HEDEF=new Map();   // HEDEF: "guid|makine_kodu" -> hedef(1-4
 let DEGER=new Map();                    // DEGER: egt_egitim.uid -> {egitim_puan,etk_uygulama,...}
 let _EGT_BAYRAKSIZ=0;                   // egitim kaydi var ama plan kutucugu isaretsiz
 let _POL_IKIZ=[];                       // LeanSys'te iki personel kaydi olan kisiler
+let _GUID_ESLE=new Map();               // eski personel GUID -> kanonik GUID
 let EGT_BY_UID=new Map();               // uid -> egitim kaydı (modal için)
 let _modalUid=null;
 let PDEGER=new Map();                   // PDEGER: "guid|makine_kodu" -> {checklist,hesaplanan_seviye,deger_tarihi,...}
@@ -907,31 +908,64 @@ async function loadAll(notify){
     }catch(e){AKTIF_GUIDS=null;}
     // Aktif personel isimli roster (polivalans/eğitim kaydı olmayan çalışanlar da Personel sekmesinde görünsün)
     try{const pr=AYAR['aktif_personel_data'];PER_ROSTER=pr?JSON.parse(pr):[];}catch(e){PER_ROSTER=[];}
-    // POL dedup: aynı personel-makine için yalnızca en güncel kaydı tut.
-    // Anahtar GUID+makine idi; LeanSys'te aynı kişi için İKİ personel kaydı
-    // açılabildiği icin (ölçüm: 10 isim, 68 makine-kişi çifti) aynı insan
-    // listede iki kez çıkıyordu. Anahtar artık İSİM+makine.
-    // Kazanan: önce AKTİF personel kaydı, sonra en güncel tarih, sonra inckey.
-    const _pm=new Map(); const _elenen=[];
-    const _polKisi=r=>String(r.personel||'').trim().toLocaleUpperCase('tr').replace(/\s+/g,' ')
-                       || ('#'+normG(r.personel_guid));
-    const _polMak=r=>(r.makine_kodu||'')||('@'+(r.makine_adi||''));
-    const _polK=r=>_polKisi(r)+'|'+_polMak(r);
+    // 1) KIMLIK TEKILLESTIRME — GUID'ten once.
+    // LeanSys'te ayni kisi icin IKI personel kaydi acilabiliyor (olcum: 10
+    // isim). Yalnizca makine cakismasini birlestirmek yetmiyordu; kisinin
+    // tek GUID'de bulunan makineleri oteki GUID'de kalip ekranda AYRI GRUP
+    // olarak cikiyordu (DENIZ UNDOGDUER: 8 + 12 makine).
+    // ISIM+LOKASYON ayni ise GUID'ler tek KANONIK GUID'e esitlenir.
+    // Lokasyon farkliysa BIRLESTIRILMEZ: ayni adli iki kisi olabilir
+    // (olcum: 9 isimde lokasyon ortak, 1'inde degil).
+    const _polKisi=r=>String(r.personel||'').trim().toLocaleUpperCase('tr').replace(/\s+/g,' ');
+    const _kimlik=r=>_polKisi(r)+'@'+String(r.lokasyon||'').trim().toLocaleUpperCase('tr');
     const _polSkor=r=>[(AKTIF_GUIDS&&AKTIF_GUIDS.has(normG(r.personel_guid)))?1:0,
                        String(r.tarih||''), +r.pol_inckey||0];
-    const _polUstun=(a,b)=>{const x=_polSkor(a),y=_polSkor(b);
+    const _ustun=(a,b)=>{const x=_polSkor(a),y=_polSkor(b);
       return x[0]!==y[0]?x[0]>y[0]:(x[1]!==y[1]?x[1]>y[1]:x[2]>y[2]);};
+
+    const _kimlikGuid=new Map();     // kimlik -> kanonik satir
+    POL.forEach(r=>{
+      if(!_polKisi(r)) return;       // adsiz kayitta kimlik kurulamaz
+      const k=_kimlik(r), e=_kimlikGuid.get(k);
+      if(!e||_ustun(r,e)) _kimlikGuid.set(k,r);
+    });
+    // eski GUID -> kanonik GUID
+    _GUID_ESLE=new Map(); const _ikizAd=new Map();
+    POL.forEach(r=>{
+      if(!_polKisi(r)) return;
+      const kanon=_kimlikGuid.get(_kimlik(r)); if(!kanon) return;
+      const eski=normG(r.personel_guid), yeni=normG(kanon.personel_guid);
+      if(!eski||eski===yeni) return;
+      _GUID_ESLE.set(eski,yeni);
+      if(!_ikizAd.has(_kimlik(r)))
+        _ikizAd.set(_kimlik(r),{ad:kanon.personel,lokasyon:kanon.lokasyon,kalan:yeni,elenen:eski});
+    });
+    _POL_IKIZ=[..._ikizAd.values()];
+
+    // 2) GUID'leri kanonige cevir; eski anahtar tasinsin diye sakla
+    const _tasi=[];
+    const _kanonla=(dizi)=>dizi.forEach(r=>{
+      const eski=normG(r.personel_guid), yeni=_GUID_ESLE.get(eski);
+      if(!yeni) return;
+      r._eskiGuid=r.personel_guid; r.personel_guid=yeni;
+      if(r.makine_kodu!==undefined) _tasi.push([eski+'|'+(r.makine_kodu||''), yeni+'|'+(r.makine_kodu||'')]);
+    });
+    _kanonla(POL);
+    // EGT'ye de uygula: POL kanonige gecerken egitim kayitlari eski GUID'de
+    // kalirsa kisi "egitim almayan" listesine duser.
+    _kanonla(EGT);
+
+    // 3) Ayni kisi-makine icin yalnizca en guncel kayit
+    const _pm=new Map();
+    const _polMak=r=>(r.makine_kodu||'')||('@'+(r.makine_adi||''));
+    // Anahtar KIMLIK ile ayni olmali (isim+lokasyon): yalnizca isimle
+    // birlestirilirse lokasyonu farkli ayni adli iki kisi tek satira iner.
+    const _polK=r=>(_polKisi(r)?_kimlik(r):('#'+normG(r.personel_guid)))+'|'+_polMak(r);
     POL.forEach(r=>{
       const k=_polK(r), e=_pm.get(k);
-      if(!e){_pm.set(k,r);return;}
-      if(_polUstun(r,e)){_pm.set(k,r);_elenen.push([r,e]);} else _elenen.push([e,r]);
+      if(!e||_ustun(r,e)) _pm.set(k,r);
     });
     POL=[..._pm.values()];
-    // Yalnizca GUID'i FARKLI olanlar "ayri personel kaydi" demektir; ayni
-    // GUID'in eski satiri zaten normal tekrar.
-    _POL_IKIZ=_elenen.filter(([k,y])=>normG(k.personel_guid)!==normG(y.personel_guid))
-      .map(([k,y])=>({ad:k.personel,lokasyon:k.lokasyon,makine:k.makine_adi||k.makine_kodu,
-                      kalan:normG(k.personel_guid),elenen:normG(y.personel_guid)}));
     HEDEF=new Map(hedefRows.filter(r=>r.hedef!=null).map(r=>[r.id,+r.hedef]));
     DEGER=new Map(degerRows.map(r=>[r.uid,r]));
     PDEGER=new Map(polDegerRows.map(r=>[r.id,r]));
@@ -944,16 +978,14 @@ async function loadAll(notify){
     EGT.forEach(r=>{ if(!r.gerceklesme&&r.kayit_tarih){ r.gerceklesme=1; r._bayraksiz=1; } });
     EGT_BY_UID=new Map(EGT.map(r=>[r.uid,r]));
     POL_BY_KEY=new Map(POL.map(r=>[(r.personel_guid||'')+'|'+(r.makine_kodu||''),r]));
-    // Elenen kaydin GUID'ine bagli hedef/degerlendirmeler kaybolmasin
-    // (olcum: 68 polivalans degerlendirmesi). Kazananin anahtarina TASI,
-    // yalnizca kazananda YOKSA — kullanicinin guncel girdisi ezilmez.
+    // Eski GUID'e bagli hedef/degerlendirmeler kaybolmasin (olcum: 68
+    // polivalans degerlendirmesi). Kanonik anahtara TASI, yalnizca orada
+    // YOKSA — kullanicinin guncel girdisi ezilmez.
     // Supabase'e hicbir sey yazilmaz; yalnizca ekranda gorunur.
-    _elenen.forEach(([kaz,kay])=>{
-      const ka=(kaz.personel_guid||'')+'|'+(kaz.makine_kodu||'');
-      const ky=(kay.personel_guid||'')+'|'+(kay.makine_kodu||'');
-      if(ka===ky)return;
-      if(!HEDEF.has(ka)&&HEDEF.has(ky))HEDEF.set(ka,HEDEF.get(ky));
-      if(!PDEGER.has(ka)&&PDEGER.has(ky))PDEGER.set(ka,PDEGER.get(ky));
+    _tasi.forEach(([eskiK,yeniK])=>{
+      if(eskiK===yeniK)return;
+      if(!HEDEF.has(yeniK)&&HEDEF.has(eskiK))HEDEF.set(yeniK,HEDEF.get(eskiK));
+      if(!PDEGER.has(yeniK)&&PDEGER.has(eskiK))PDEGER.set(yeniK,PDEGER.get(eskiK));
     });
     buildFilters(); renderDash(); renderPol(); renderEgt(); updateChgCount();
     if(notify)toast(`✅ ${POL.length} polivalans, ${EGT.length} eğitim kaydı yüklendi.`);
@@ -1977,8 +2009,8 @@ function renderDash(){
   // sayildi. Ayni adli IKI FARKLI kisi olma ihtimali icin listeleniyor.
   const ikiz=_POL_IKIZ.filter(x=>!lok||x.lokasyon===lok);
   if(ikiz.length) uy.push({
-    baslik:`${ikiz.length} polivalans satırında aynı kişi LeanSys'te iki ayrı personel kaydı taşıyor — <b>tek kişi</b> sayıldı.`,
-    satir:ikiz.map(x=>`${esc(x.ad||'')} · ${esc(x.makine||'')} · ${esc(x.lokasyon||'')}`)});
+    baslik:`${ikiz.length} kişi LeanSys'te iki ayrı personel kaydı taşıyor — <b>tek kişi</b> sayıldı.`,
+    satir:ikiz.map(x=>`${esc(x.ad||'')} · ${esc(x.lokasyon||'')} · kalan ${String(x.kalan).slice(0,8)}… / birleşen ${String(x.elenen).slice(0,8)}…`)});
 
   if(ileri.length) uy.push({
     baslik:`${ileri.length} kaydın gerçekleşme tarihi ileri tarihli — aylık grafikte <b>plan ayına</b> yazıldı, LeanSys'te düzeltilmeli.`,
