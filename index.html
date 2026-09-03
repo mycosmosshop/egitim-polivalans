@@ -2496,10 +2496,119 @@ async function silDeger(){
 // ===================== Polivalans Değerlendirme (checklist) =====================
 const SEV_RENK={1:'#ef4444',2:'#f59e0b',3:'#3b82f6',4:'#16a34a'};
 function bugun(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// ── Seviye ↔ gereken eğitimler ──────────────────────────────────────
+// Katalogda seviye bilgisi YOK ve makinelerin 2/3'ünde metin eşleşmesi
+// de yok (ölçüm: 241 makinenin 165'i). Bu yüzden eşleşme TÜRETİLMEZ;
+// makine bazında bir kez TANIMLANIR, herkese uygulanır.
+// egt_ayar/pol_seviye_egitim: { "<makine_kodu>": { "1":[konu...], ... } }
+function _sevEgtOku(){
+  try{ return JSON.parse(AYAR.pol_seviye_egitim||'{}'); }catch(e){ return {}; }
+}
+async function _sevEgtYaz(h){
+  AYAR.pol_seviye_egitim=JSON.stringify(h);
+  await _batchUpsert('egt_ayar',[{anahtar:'pol_seviye_egitim',deger:AYAR.pol_seviye_egitim}],'anahtar');
+}
+function _sevEgtMakine(mk){
+  const h=_sevEgtOku()[mk]||{};
+  const o={}; for(let s=1;s<=4;s++) o[s]=Array.isArray(h[s])?h[s]:[];
+  return o;
+}
+// Kisi bu konuyu ALDI mi? (ad VEYA guid ile; yalnizca alinan egitim)
+function _sevKisiAldi(konu, kisiEgt){
+  const n=_egtNrm(konu);
+  return kisiEgt.find(e=>(e.gerceklesme||e.kayit_tarih)&&_egtNrm(e.konu)===n)||null;
+}
+// Makineyle ilgili katalog konulari — duzenleme ekraninda one alinir
+function _sevOnerilen(r){
+  const kod=String(r.makine_kodu||'').trim(), na=_egtNrm(r.makine_adi);
+  const gorulen=new Set(); const out=[];
+  EGT.forEach(e=>{
+    if(!e.konu||gorulen.has(e.konu))return;
+    if((kod&&String(e.konu).includes(kod))||(na.length>=6&&_egtNrm(e.konu).includes(na))){
+      gorulen.add(e.konu); out.push(e.konu);
+    }
+  });
+  return out.sort((a,b)=>a.localeCompare(b,'tr'));
+}
+function _sevEgtHtml(s, mk, kisiEgt){
+  const list=_sevEgtMakine(mk)[s];
+  if(!list.length)
+    return `<div style="padding:6px 10px;font-size:.85em;color:#94a3b8;border-top:1px dashed #e2e8f0;">
+      🎓 Bu seviye için eğitim tanımlanmamış —
+      <button onclick="sevEgtAc(${s})" style="background:none;border:none;color:#0891b2;cursor:pointer;
+        text-decoration:underline;padding:0;font-size:1em;">tanımla</button></div>`;
+  const satir=list.map(k=>{
+    const alindi=_sevKisiAldi(k,kisiEgt);
+    return `<div style="display:flex;gap:6px;align-items:flex-start;line-height:1.5;">
+      <span style="flex:none;color:${alindi?'#16a34a':'#dc2626'};font-weight:700;">${alindi?'✓':'✗'}</span>
+      <span style="flex:1;${alindi?'':'color:#b91c1c;'}">${esc(k)}
+        ${alindi&&alindi.kayit_tarih?`<span class="muted" style="font-size:.9em"> · ${esc(alindi.kayit_tarih)}</span>`:''}</span></div>`;
+  }).join('');
+  const eksik=list.filter(k=>!_sevKisiAldi(k,kisiEgt)).length;
+  return `<div style="padding:6px 10px;font-size:.85em;border-top:1px dashed #e2e8f0;background:#f8fafc;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <b style="color:#334155;">🎓 Bu seviye için gereken eğitimler</b>
+      <span>${eksik?`<span style="color:#b91c1c;font-weight:600;">${eksik} eksik</span> · `:''}
+        <button onclick="sevEgtAc(${s})" style="background:none;border:none;color:#0891b2;cursor:pointer;
+          text-decoration:underline;padding:0;font-size:1em;">düzenle</button></span></div>
+    ${satir}</div>`;
+}
+
+let _sevEgtSeviye=0;
+function sevEgtAc(s){
+  _sevEgtSeviye=s;
+  const [guid,mk]=String(_polModalKey||'|').split('|');
+  const r=POL_BY_KEY.get(_polModalKey)||{};
+  const secili=new Set(_sevEgtMakine(mk)[s]);
+  const onerilen=_sevOnerilen(r);
+  const tumu=[...new Set(EGT.map(e=>e.konu).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const sirali=[...onerilen, ...tumu.filter(k=>!onerilen.includes(k))];
+  document.getElementById('sevEgtBaslik').textContent=
+    `🎓 Seviye ${s} — ${SEVIYE[s]} · gereken eğitimler`;
+  document.getElementById('sevEgtGovde').innerHTML=
+    `<div class="muted" style="font-size:.88em;margin-bottom:8px;line-height:1.6;">
+       <b>${esc(r.makine_adi||'')}</b> için tanımlanır; bu makinedeki <b>herkese</b> uygulanır.
+       ${onerilen.length?`İlk ${onerilen.length} konu bu makineyle adı/kodu eşleşenlerdir.`
+                        :'Bu makineyle adı/kodu eşleşen katalog konusu yok — listeden seç.'}</div>
+     <input id="sevEgtAra" placeholder="🔍 Konu ara..." oninput="sevEgtSuz()"
+            style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:8px;">
+     <div id="sevEgtListe" style="max-height:44vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;">
+       ${sirali.map((k,i)=>`<label class="chk-item" data-konu="${escAttr(_egtNrm(k))}"
+          style="display:flex;gap:8px;padding:5px 9px;border-bottom:1px solid #f1f5f9;cursor:pointer;
+                 ${i<onerilen.length?'background:#ecfeff;':''}">
+          <input type="checkbox" class="sev-egt" value="${escAttr(k)}" ${secili.has(k)?'checked':''}>
+          <span>${esc(k)}${i<onerilen.length?' <span class="muted" style="font-size:.85em">· ilgili</span>':''}</span>
+        </label>`).join('')}
+     </div>`;
+  document.getElementById('sevEgtModal').classList.add('show');
+}
+function sevEgtSuz(){
+  const q=_egtNrm(document.getElementById('sevEgtAra').value);
+  document.querySelectorAll('#sevEgtListe label').forEach(l=>{
+    l.style.display=(!q||String(l.dataset.konu).includes(q))?'flex':'none';
+  });
+}
+function sevEgtKapat(){ document.getElementById('sevEgtModal').classList.remove('show'); }
+async function sevEgtKaydet(){
+  const mk=String(_polModalKey||'|').split('|')[1];
+  const sec=[...document.querySelectorAll('#sevEgtListe .sev-egt:checked')].map(c=>c.value);
+  const h=_sevEgtOku();
+  h[mk]=h[mk]||{};
+  if(sec.length) h[mk][_sevEgtSeviye]=sec; else delete h[mk][_sevEgtSeviye];
+  if(!Object.keys(h[mk]).length) delete h[mk];
+  sevEgtKapat();
+  const [guid,mk2]=String(_polModalKey||'|').split('|');
+  openPolDeger(guid,mk2);                      // modali tazele
+  try{ await _sevEgtYaz(h); toast('✅ Seviye eğitimleri kaydedildi','#1e7e4a',2000); }
+  catch(e){ toast('❌ Kaydedilemedi: '+e.message,'#dc2626',5000); }
+}
+
 function openPolDeger(guid,mk){
   const key=guid+'|'+mk; _polModalKey=key;
   const r=POL_BY_KEY.get(key)||{}; const mevcut=+r.yetenek||0;
   const pd=PDEGER.get(key);
+  // Degerlendirilen kisinin egitimleri: seviye egitimleri ✓/✗ icin
+  const _kisiEgt=EGT.filter(e=>(guid&&e.personel_guid===guid)||(r.personel&&e.personel===r.personel));
   // checklist: kayıt varsa onu kullan, yoksa mevcut yeteneğe göre otomatik (≤mevcut tüm kriterler işaretli)
   let chk = pd&&pd.checklist ? pd.checklist : {};
   if(!pd||!pd.checklist){ chk={}; for(let s=1;s<=4;s++) chk[s]=PKRITER[s].map(()=> s<=mevcut); }
@@ -2514,7 +2623,7 @@ function openPolDeger(guid,mk){
       const ck=chk[s]&&chk[s][i]?'checked':'';
       html+=`<label class="chk-item"><input type="checkbox" data-sev="${s}" data-idx="${i}" ${ck} onchange="polHesapla()"><span>${esc(kr)}</span></label>`;
     });
-    html+='</div></div>';
+    html+='</div>'+_sevEgtHtml(s,mk,_kisiEgt)+'</div>';
   }
   document.getElementById('polChecklist').innerHTML=html;
   document.getElementById('pTarih').value=(pd&&pd.deger_tarihi)||bugun();
@@ -3481,6 +3590,19 @@ document.addEventListener('click',e=>{
 applyAdmin();
 loadAll(true);
 </script>
+<div class="modal-bg" id="sevEgtModal">
+  <div class="modal" style="max-width:680px;">
+    <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);">
+      <h3 id="sevEgtBaslik">🎓 Seviye eğitimleri</h3>
+      <button class="modal-x" onclick="sevEgtKapat()">✕</button></div>
+    <div class="modal-body" id="sevEgtGovde"></div>
+    <div class="modal-foot">
+      <button class="btn" onclick="sevEgtKapat()">Vazgeç</button>
+      <button class="btn primary" onclick="sevEgtKaydet()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="egtEsleModal">
   <div class="modal" style="max-width:620px;">
     <div class="modal-head" style="background:linear-gradient(135deg,#0891b2,#0e7490);">
